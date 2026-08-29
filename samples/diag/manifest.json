@@ -1,0 +1,14 @@
+{
+  "id": "com.example.pwalib-diag",
+  "name": "PWA Library 診断",
+  "short_name": "診断",
+  "description": "WebView で何が動いて何が動かないかを一覧で確認します。",
+  "version": "1.0",
+  "start_url": "index.html",
+  "display": "standalone",
+  "theme_color": "#0f766e",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}

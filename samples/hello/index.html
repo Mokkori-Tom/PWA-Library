@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hello PWA</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #f6f8fa; color: #111; }
+  h1 { font-size: 22px; }
+  .row { margin: 12px 0; }
+  /* origin は app-<uuid32>.androidplatform.net で 64 文字あり、折り返さないと
+     単独で画面幅を超える。 */
+  code { background: #e6eaef; padding: 2px 6px; border-radius: 4px;
+         overflow-wrap: anywhere; word-break: break-all; }
+  button { font-size: 16px; padding: 10px 18px; border-radius: 8px; border: 0; background: #1f6feb; color: #fff; }
+</style>
+</head>
+<body>
+  <h1>Hello PWA</h1>
+  <div class="row">origin: <code id="origin"></code></div>
+  <div class="row">Service Worker: <code id="sw">確認中…</code></div>
+  <div class="row">保存された数値: <code id="count">-</code></div>
+  <div class="row">横方向のはみ出し: <code id="overflow">-</code></div>
+  <div class="row"><button id="inc">+1 して localStorage に保存</button></div>
+  <p>アプリを閉じて開き直しても数値が残っていれば、origin が安定していて localStorage が永続化できています。</p>
+<script>
+  document.getElementById('origin').textContent = location.origin;
+
+  // 横スクロールが出たとき、原因が HTML 側かを切り分けるための実測値。
+  const reportOverflow = () => {
+    const over = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    document.getElementById('overflow').textContent =
+      over > 0 ? over + 'px（HTML 側が画面幅を超えています）' : 'なし';
+  };
+  window.addEventListener('load', reportOverflow);
+  window.addEventListener('resize', reportOverflow);
+
+  const countEl = document.getElementById('count');
+  const render = () => { countEl.textContent = localStorage.getItem('count') || '0'; };
+  render();
+  document.getElementById('inc').onclick = () => {
+    localStorage.setItem('count', String(Number(localStorage.getItem('count') || '0') + 1));
+    render();
+  };
+
+  const swEl = document.getElementById('sw');
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => { swEl.textContent = '登録済み'; })
+      .catch(err => { swEl.textContent = '失敗: ' + err.message; });
+  } else {
+    swEl.textContent = '利用不可（secure context ではありません）';
+  }
+</script>
+</body>
+</html>

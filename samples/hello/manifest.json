@@ -1,0 +1,14 @@
+{
+  "id": "com.example.hello-pwa",
+  "name": "Hello PWA",
+  "short_name": "Hello",
+  "description": "動作確認用のサンプル。origin / Service Worker / localStorage を表示します。",
+  "version": "1.2",
+  "start_url": "index.html",
+  "display": "standalone",
+  "theme_color": "#1f6feb",
+  "background_color": "#f6f8fa",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}

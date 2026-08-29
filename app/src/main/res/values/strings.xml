@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">PWA Library</string>
+    <string name="import_zip">アプリを追加</string>
+    <string name="empty_title">まだアプリがありません</string>
+    <string name="empty_body">右下のボタンから zip ファイルを選ぶと追加できます。</string>
+    <string name="delete">削除</string>
+    <string name="update">更新</string>
+    <string name="add_to_home">ホーム画面に追加</string>
+    <string name="cancel">キャンセル</string>
+    <string name="close">閉じる</string>
+    <string name="shortcut_disabled">このアプリはライブラリから削除されました</string>
+    <string name="export_zip">zip を保存</string>
+    <string name="share_zip">zip を共有</string>
+    <string name="share_chooser">アプリを共有</string>
+</resources>

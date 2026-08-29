@@ -1,0 +1,161 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "a78b0588f757069eb07ced044d6e287e",
+    "entities": [
+      {
+        "tableName": "apps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `manifest_id` TEXT, `name` TEXT NOT NULL, `short_name` TEXT NOT NULL, `description` TEXT NOT NULL, `icon_path` TEXT, `start_url` TEXT NOT NULL, `display_mode` TEXT NOT NULL, `theme_color` TEXT, `zip_file_path` TEXT NOT NULL, `app_dir_path` TEXT NOT NULL, `size_bytes` INTEGER NOT NULL, `shortcut_id` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `version` TEXT NOT NULL, `category` TEXT NOT NULL, `tags` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifest_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortName",
+            "columnName": "short_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iconPath",
+            "columnName": "icon_path",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startUrl",
+            "columnName": "start_url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayMode",
+            "columnName": "display_mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "themeColor",
+            "columnName": "theme_color",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "zipFilePath",
+            "columnName": "zip_file_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appDirPath",
+            "columnName": "app_dir_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "size_bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortcutId",
+            "columnName": "shortcut_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tags",
+            "columnName": "tags",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_apps_uuid",
+            "unique": true,
+            "columnNames": [
+              "uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_apps_uuid` ON `${TABLE_NAME}` (`uuid`)"
+          },
+          {
+            "name": "index_apps_manifest_id",
+            "unique": false,
+            "columnNames": [
+              "manifest_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_apps_manifest_id` ON `${TABLE_NAME}` (`manifest_id`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a78b0588f757069eb07ced044d6e287e')"
+    ]
+  }
+}

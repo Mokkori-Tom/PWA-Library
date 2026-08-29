@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PWA Library 診断</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px 12px 48px;
+         background: #f6f8fa; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 16px; font-size: 13px; color: #555; }
+  h2 { font-size: 14px; margin: 24px 0 8px; color: #0f766e; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 7px 6px; border-bottom: 1px solid #e3e8ee; vertical-align: top; }
+  td.name { width: 42%; }
+  td.st { width: 68px; font-weight: 600; white-space: nowrap; }
+  td.detail { color: #555; overflow-wrap: anywhere; word-break: break-all; }
+  .ok { color: #15803d; } .ng { color: #b91c1c; }
+  .info { color: #555; } .warn { color: #a16207; }
+  button, .btn { font-size: 14px; padding: 9px 14px; margin: 4px 4px 4px 0;
+                 border-radius: 8px; border: 0; background: #0f766e; color: #fff;
+                 display: inline-block; text-decoration: none; }
+  input[type=file] { font-size: 13px; }
+  .manual { background: #fff; border: 1px solid #e3e8ee; border-radius: 10px;
+            padding: 12px; margin-bottom: 12px; }
+  .manual h3 { font-size: 13px; margin: 0 0 6px; }
+  .manual .expect { font-size: 12px; color: #777; margin: 0 0 8px; }
+  code { background: #e6eaef; padding: 1px 5px; border-radius: 4px;
+         overflow-wrap: anywhere; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<h1>PWA Library 診断</h1>
+<p class="lead">自動判定は下の表。手動確認は末尾のカードを 1 つずつ押してください。</p>
+
+<h2>自動判定</h2>
+<table id="results"></table>
+
+<h2>手動確認</h2>
+
+<div class="manual">
+  <h3>ファイル選択（単一）</h3>
+  <p class="expect">期待: ファイル選択画面が開き、選んだ名前が出る。何も起きなければ onShowFileChooser の不具合。</p>
+  <input type="file" id="f1">
+  <div id="f1out"></div>
+</div>
+
+<div class="manual">
+  <h3>ファイル選択（複数・画像限定）</h3>
+  <p class="expect">期待: 複数選択できる。accept が効くかは端末のピッカー次第。</p>
+  <input type="file" id="f2" multiple accept="image/*">
+  <div id="f2out"></div>
+</div>
+
+<div class="manual">
+  <h3>外部リンク</h3>
+  <p class="expect">期待: 外部ブラウザが開く。WebView 内で開いたら shouldOverrideUrlLoading の不具合。ネット接続がなければブラウザ側でエラーになるが、それは正常。</p>
+  <a class="btn" href="https://example.com">&lt;a href&gt; で開く</a>
+  <button id="winopen">window.open で開く</button>
+</div>
+
+<div class="manual">
+  <h3>ダウンロード</h3>
+  <p class="expect">期待: 「このアプリではダウンロードできません」のトースト。無反応なら DownloadListener に来ていない。</p>
+  <button id="dl">blob をダウンロード</button>
+</div>
+
+<div class="manual">
+  <h3>フォルダへの書き込み（File System Access）</h3>
+  <p class="expect">期待: 不明。これを確かめるためのテストです。フォルダ選択が出て
+  <code>pwalib-test.txt</code> が書ければ利用可能。エラー名がそのまま出ます。</p>
+  <button id="dirpick">showDirectoryPicker() を呼ぶ</button>
+  <button id="savepick">showSaveFilePicker() を呼ぶ</button>
+  <div id="fsout"></div>
+</div>
+
+<div class="manual">
+  <h3>戻るキー</h3>
+  <p class="expect">期待: 押すたびに 3→2→1 と戻り、その後アプリが閉じる。いきなり閉じたら Back 制御の不具合。</p>
+  <button id="push">履歴を 3 つ積む</button>
+  <div>現在の履歴位置: <code id="histstate">-</code></div>
+</div>
+
+<div class="manual">
+  <h3>フルスクリーン</h3>
+  <p class="expect">期待: ステータスバーが消える。もう一度押すと戻る。</p>
+  <button id="fs">requestFullscreen()</button>
+  <div id="fsout"></div>
+</div>
+
+<script type="module">
+  import { moduleLoaded } from './mod.mjs';
+  window.__moduleLoaded = moduleLoaded;
+</script>
+
+<script>
+(function () {
+  var rows = [];
+  var table = document.getElementById('results');
+
+  function add(name, status, detail) {
+    rows.push({ name: name, status: status, detail: detail == null ? '' : String(detail) });
+    render();
+  }
+  function render() {
+    var cls = { 'OK': 'ok', 'NG': 'ng', '情報': 'info', '要確認': 'warn' };
+    table.innerHTML = rows.map(function (r) {
+      return '<tr><td class="name">' + r.name + '</td>' +
+             '<td class="st ' + (cls[r.status] || 'info') + '">' + r.status + '</td>' +
+             '<td class="detail">' + r.detail + '</td></tr>';
+    }).join('');
+  }
+  function esc(v) {
+    return String(v).replace(/[&<>]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c];
+    });
+  }
+
+  // ---------------- 環境 ----------------
+  add('origin', '情報', esc(location.origin));
+  add('isSecureContext', window.isSecureContext ? 'OK' : 'NG',
+      window.isSecureContext ? 'Service Worker が使える前提が成立' : 'https 扱いになっていない');
+  add('画面幅 / DPR', '情報',
+      window.innerWidth + ' x ' + window.innerHeight + ' CSS px, DPR ' + window.devicePixelRatio);
+
+  function overflow() {
+    var d = document.documentElement;
+    var over = d.scrollWidth - d.clientWidth;
+    return over > 0 ? { s: 'NG', d: over + 'px はみ出している' } : { s: 'OK', d: 'なし' };
+  }
+  window.addEventListener('load', function () {
+    var o = overflow();
+    add('横方向のはみ出し', o.s, o.d);
+    // Module scripts are deferred, so they execute after every classic inline
+    // script on the page. Checking earlier always reported NG regardless of MIME.
+    add('ES module (.mjs)', window.__moduleLoaded ? 'OK' : 'NG',
+        window.__moduleLoaded ? '' : 'MIME が text/javascript でない疑い');
+  });
+
+  var safeTop = getComputedStyle(document.documentElement)
+    .getPropertyValue('--x') || '';
+  add('env(safe-area-inset)', CSS && CSS.supports && CSS.supports('top: env(safe-area-inset-top)')
+      ? 'OK' : '情報', 'viewport-fit=cover 指定時のノッチ回避');
+
+  // ---------------- ストレージ ----------------
+  try {
+    var n = Number(localStorage.getItem('diag-count') || '0') + 1;
+    localStorage.setItem('diag-count', String(n));
+    add('localStorage', 'OK', '起動回数 ' + n + ' 回目（更新後も増え続ければ origin 維持が成功）');
+  } catch (e) {
+    add('localStorage', 'NG', esc(e.message));
+  }
+
+  try {
+    sessionStorage.setItem('x', '1');
+    add('sessionStorage', 'OK', '');
+  } catch (e) {
+    add('sessionStorage', 'NG', esc(e.message));
+  }
+
+  (function () {
+    if (!window.indexedDB) { add('IndexedDB', 'NG', 'API なし'); return; }
+    var req = indexedDB.open('diag-db', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+    req.onerror = function () { add('IndexedDB', 'NG', 'open 失敗'); };
+    req.onsuccess = function () {
+      try {
+        var tx = req.result.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(Date.now(), 'stamp');
+        tx.oncomplete = function () { add('IndexedDB', 'OK', '読み書き成功'); };
+        tx.onerror = function () { add('IndexedDB', 'NG', 'transaction 失敗'); };
+      } catch (e) { add('IndexedDB', 'NG', esc(e.message)); }
+    };
+  })();
+
+  (function () {
+    if (!window.caches) { add('Cache Storage', 'NG', 'API なし'); return; }
+    caches.open('diag-probe')
+      .then(function (c) { return c.put('/probe', new Response('x')); })
+      .then(function () { add('Cache Storage', 'OK', ''); })
+      .catch(function (e) { add('Cache Storage', 'NG', esc(e.message)); });
+  })();
+
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(function (est) {
+      add('storage.estimate', '情報',
+          Math.round((est.usage || 0) / 1024) + ' KB 使用 / ' +
+          Math.round((est.quota || 0) / 1024 / 1024) + ' MB');
+    });
+  }
+
+  // ---------------- Service Worker ----------------
+  if (!('serviceWorker' in navigator)) {
+    add('Service Worker', 'NG', 'API なし');
+  } else {
+    navigator.serviceWorker.register('sw.js').then(function () {
+      add('SW 登録', 'OK', '');
+      add('SW が制御中', navigator.serviceWorker.controller ? 'OK' : '要確認',
+          navigator.serviceWorker.controller ? '' : '初回は未制御が正常。再起動後も NG なら不具合');
+    }).catch(function (e) {
+      add('SW 登録', 'NG', esc(e.message));
+    });
+  }
+
+  // ---------------- ネットワーク（遮断されているのが正常） ----------------
+  fetch('./manifest.json', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (j) { add('自 origin への fetch', 'OK', 'manifest version ' + esc(j.version)); })
+    .catch(function (e) { add('自 origin への fetch', 'NG', esc(e.message)); });
+
+  fetch('https://example.com', { mode: 'no-cors' })
+    .then(function () {
+      add('外部への fetch', 'NG', '通ってしまった。INTERNET 権限が復活している疑い');
+    })
+    .catch(function () {
+      add('外部への fetch', 'OK', '遮断されている（ゼロパーミッション設計どおり）');
+    });
+
+  // ---------------- プラットフォーム API ----------------
+  add('Notification API', ('Notification' in window) ? '要確認' : 'OK',
+      ('Notification' in window) ? '存在する（WebView では通常ない）' : 'WebView では非対応。想定どおり');
+
+  (function () {
+    try {
+      WebAssembly.instantiate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))
+        .then(function () { add('WebAssembly', 'OK', ''); })
+        .catch(function (e) { add('WebAssembly', 'NG', esc(e.message)); });
+    } catch (e) { add('WebAssembly', 'NG', esc(e.message)); }
+  })();
+
+  (function () {
+    if (!window.Worker) { add('Web Worker', 'NG', 'API なし'); return; }
+    try {
+      var w = new Worker('worker.js');
+      var t = setTimeout(function () { add('Web Worker', 'NG', '応答なし'); }, 3000);
+      w.onmessage = function (e) {
+        clearTimeout(t);
+        add('Web Worker', e.data === 42 ? 'OK' : 'NG', '21*2 = ' + e.data);
+        w.terminate();
+      };
+      w.onerror = function (e) { clearTimeout(t); add('Web Worker', 'NG', esc(e.message || 'error')); };
+      w.postMessage(21);
+    } catch (e) { add('Web Worker', 'NG', esc(e.message)); }
+  })();
+
+  (function () {
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl2') || c.getContext('webgl');
+    add('WebGL', gl ? 'OK' : 'NG', gl ? (c.getContext('webgl2') ? 'webgl2' : 'webgl') : '取得できず');
+  })();
+
+  add('showOpenFilePicker', window.showOpenFilePicker ? '情報' : '情報',
+      window.showOpenFilePicker ? '存在する' : '存在しない');
+  add('showSaveFilePicker', window.showSaveFilePicker ? '情報' : '情報',
+      window.showSaveFilePicker ? '存在する' : '存在しない');
+  add('showDirectoryPicker', window.showDirectoryPicker ? '情報' : '情報',
+      window.showDirectoryPicker ? '存在する（末尾のカードで実際に試せます）' : '存在しない');
+
+  // OPFS is the other way to hold real files. It is sandboxed rather than a
+  // folder the user can browse, but it is full read/write with directories.
+  (function () {
+    if (!navigator.storage || !navigator.storage.getDirectory) {
+      add('OPFS', 'NG', 'navigator.storage.getDirectory がない');
+      return;
+    }
+    navigator.storage.getDirectory()
+      .then(function (root) { return root.getDirectoryHandle('diag', { create: true }); })
+      .then(function (dir) { return dir.getFileHandle('probe.txt', { create: true }); })
+      .then(function (fh) {
+        if (!fh.createWritable) throw new Error('createWritable がない');
+        return fh.createWritable()
+          .then(function (w) {
+            return w.write('pwalib ' + Date.now()).then(function () { return w.close(); });
+          })
+          .then(function () { return fh.getFile(); })
+          .then(function (f) { return f.text(); });
+      })
+      .then(function (text) { add('OPFS 読み書き', 'OK', esc(text)); })
+      .catch(function (e) { add('OPFS 読み書き', 'NG', esc(e.name + ': ' + e.message)); });
+  })();
+
+  add('Clipboard API', (navigator.clipboard && navigator.clipboard.writeText) ? '情報' : 'OK',
+      '書き込みは要ユーザー操作。存在確認のみ');
+
+  (function () {
+    if (!navigator.geolocation) { add('Geolocation', 'OK', 'API なし'); return; }
+    var settled = false;
+    var t = setTimeout(function () {
+      if (!settled) { settled = true; add('Geolocation', 'NG', '無反応。onGeolocationPermissionsShowPrompt 未実装で固まっている'); }
+    }, 5000);
+    navigator.geolocation.getCurrentPosition(
+      function () { if (!settled) { settled = true; clearTimeout(t); add('Geolocation', '要確認', '取得できた。権限を宣言していないので想定外'); } },
+      function (err) { if (!settled) { settled = true; clearTimeout(t); add('Geolocation', 'OK', '拒否された: ' + esc(err.message)); } },
+      { timeout: 4000 }
+    );
+  })();
+
+  (function () {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      add('getUserMedia', 'OK', 'API なし'); return;
+    }
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function (s) {
+        s.getTracks().forEach(function (t) { t.stop(); });
+        add('getUserMedia', '要確認', 'カメラが取れた。権限を宣言していないので想定外');
+      })
+      .catch(function (e) { add('getUserMedia', 'OK', '拒否された: ' + esc(e.name)); });
+  })();
+
+  // ---------------- 手動確認の配線 ----------------
+  function names(list) {
+    return Array.prototype.map.call(list, function (f) {
+      return esc(f.name) + ' (' + f.size + 'B)';
+    }).join('<br>');
+  }
+  document.getElementById('f1').onchange = function (e) {
+    document.getElementById('f1out').innerHTML = e.target.files.length
+      ? names(e.target.files) : '選択なし';
+  };
+  document.getElementById('f2').onchange = function (e) {
+    document.getElementById('f2out').innerHTML = e.target.files.length
+      ? names(e.target.files) : '選択なし';
+  };
+
+  document.getElementById('winopen').onclick = function () {
+    window.open('https://example.com', '_blank');
+  };
+
+  document.getElementById('dl').onclick = function () {
+    var blob = new Blob(['pwa library download test'], { type: 'text/plain' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'test.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  var fsOut = document.getElementById('fsout');
+  function fsReport(msg) { fsOut.innerHTML = msg; }
+
+  document.getElementById('dirpick').onclick = function () {
+    if (!window.showDirectoryPicker) { fsReport("<span class='ng'>API なし</span>"); return; }
+    Promise.resolve()
+      .then(function () { return window.showDirectoryPicker({ mode: 'readwrite' }); })
+      .then(function (dir) {
+        return dir.getFileHandle('pwalib-test.txt', { create: true })
+          .then(function (fh) { return fh.createWritable(); })
+          .then(function (w) {
+            return w.write('pwalib ' + new Date().toISOString())
+              .then(function () { return w.close(); });
+          })
+          .then(function () {
+            fsReport("<span class='ok'>書き込み成功</span> " + esc(dir.name) + "/pwalib-test.txt");
+          });
+      })
+      .catch(function (e) { fsReport("<span class='ng'>失敗</span> " + esc(e.name + ': ' + e.message)); });
+  };
+
+  document.getElementById('savepick').onclick = function () {
+    if (!window.showSaveFilePicker) { fsReport("<span class='ng'>API なし</span>"); return; }
+    Promise.resolve()
+      .then(function () { return window.showSaveFilePicker({ suggestedName: 'pwalib-test.txt' }); })
+      .then(function (fh) { return fh.createWritable(); })
+      .then(function (w) {
+        return w.write('pwalib ' + new Date().toISOString()).then(function () { return w.close(); });
+      })
+      .then(function () { fsReport("<span class='ok'>保存成功</span>"); })
+      .catch(function (e) { fsReport("<span class='ng'>失敗</span> " + esc(e.name + ': ' + e.message)); });
+  };
+
+  var hist = document.getElementById('histstate');
+  function showHist() {
+    hist.textContent = (history.state && history.state.step) ? history.state.step : '0（初期）';
+  }
+  showHist();
+  window.addEventListener('popstate', showHist);
+  document.getElementById('push').onclick = function () {
+    for (var i = 1; i <= 3; i++) history.pushState({ step: i }, '', '#step' + i);
+    showHist();
+  };
+
+  document.getElementById('fs').onclick = function () {
+    var out = document.getElementById('fsout');
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      out.textContent = '解除しました';
+      return;
+    }
+    var p = document.documentElement.requestFullscreen
+      ? document.documentElement.requestFullscreen()
+      : Promise.reject(new Error('API なし'));
+    p.then(function () { out.textContent = 'フルスクリーンになりました'; })
+     .catch(function (e) { out.textContent = '失敗: ' + e.message; });
+  };
+})();
+</script>
+</body>
+</html>

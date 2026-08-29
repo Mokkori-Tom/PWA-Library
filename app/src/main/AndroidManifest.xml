@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Intentionally zero permissions.
+
+      Mini-apps are served from local storage through WebViewAssetLoader, so no
+      network access is required. Without INTERNET an imported zip physically
+      cannot exfiltrate anything or pull remote code, which is the containment
+      guarantee this app is built around. Do not add INTERNET back without
+      revisiting that decision.
+    -->
+
+    <application
+        android:name=".PwaLibraryApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PwaLibrary">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.PwaLibrary">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Open a .zip straight from a file manager. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/zip" />
+                <data android:scheme="content" android:mimeType="application/x-zip-compressed" />
+                <data android:scheme="content" android:mimeType="multipart/x-zip" />
+            </intent-filter>
+
+            <!-- Receive a .zip from a share sheet. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          documentLaunchMode gives every pinned mini-app its own entry in the
+          recents screen, so it reads as a separate app rather than a screen
+          inside the library.
+        -->
+        <activity
+            android:name=".web.WebAppActivity"
+            android:exported="false"
+            android:documentLaunchMode="intoExisting"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
+            android:theme="@style/Theme.PwaLibrary.WebApp" />
+
+
+        <!--
+          Serves a single staged zip when the user shares an app. Scoped to
+          cache/share/ so nothing else in the sandbox becomes reachable.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>
