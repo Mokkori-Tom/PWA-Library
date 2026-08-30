@@ -44,6 +44,9 @@ class ZipInstaller(private val context: Context) {
         private const val MAX_ZIP_BYTES = 256L * 1024 * 1024
         private const val COPY_BUFFER = 64 * 1024
 
+        /** Long enough that no dialog is still open, short enough to matter. */
+        private const val STALE_STAGE_MILLIS = 60L * 60 * 1000
+
         /**
          * How much of index.html is read looking for its head. Generous next to
          * any real head, and bounded because a single-file app can inline
@@ -81,6 +84,21 @@ class ZipInstaller(private val context: Context) {
 
     fun discard(staged: StagedZip) {
         staged.tempZip.delete()
+    }
+
+    /**
+     * Drops staged zips no dialog can still be waiting on.
+     *
+     * A staged zip outlives its import while the user is being asked whether it
+     * is an update, and that question dies with the process. Without this, every
+     * killed prompt would leave a copy of the zip in the cache.
+     */
+    fun sweepStagedZips() {
+        val cutoff = System.currentTimeMillis() - STALE_STAGE_MILLIS
+        context.cacheDir.listFiles()
+            ?.filter { it.isFile && it.name.startsWith("import-") && it.name.endsWith(".zip") }
+            ?.filter { it.lastModified() < cutoff }
+            ?.forEach { it.delete() }
     }
 
     /** Copies the zip out of the content provider and returns its SHA-256. */

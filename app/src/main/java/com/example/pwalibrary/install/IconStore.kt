@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.net.Uri
 import android.util.Base64
 import java.io.File
+import java.io.InputStream
 import kotlin.math.max
 import kotlin.math.min
 
@@ -24,6 +25,13 @@ object IconStore {
 
     /** Bounds the decode attempts a hostile or merely sloppy manifest can demand. */
     private const val MAX_CANDIDATES = 24
+
+    /**
+     * Ceiling on an image the user picks. Well above any icon and any camera
+     * photo, and low enough that a mistaken pick cannot fill internal storage
+     * while it is being copied out of the provider.
+     */
+    private const val MAX_PICKED_BYTES = 32L * 1024 * 1024
 
     /** BitmapFactory decodes neither SVG nor ICO, so those are skipped, not attempted. */
     private val RASTER_EXTENSIONS = setOf("png", "webp", "jpg", "jpeg")
@@ -68,16 +76,56 @@ object IconStore {
             .firstOrNull()
             ?: return null
 
-        val dest = Storage.iconFile(context, uuid)
+        return writePng(bitmap, Storage.iconFile(context, uuid))
+    }
+
+    /**
+     * Normalises an image the user picked into this app's custom icon slot.
+     *
+     * Null when the pick is not an image this device can decode, or is larger
+     * than [MAX_PICKED_BYTES]; the caller keeps whatever icon was already there.
+     */
+    fun importCustom(context: Context, uuid: String, source: Uri): File? {
+        val temp = File.createTempFile("pick-", ".img", context.cacheDir)
         return try {
-            dest.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            dest
+            val input = context.contentResolver.openInputStream(source) ?: return null
+            if (!copyBounded(input, temp, MAX_PICKED_BYTES)) return null
+            // Decoded from the copy rather than the stream: sizing needs two
+            // passes over the same bytes, and a content uri is not rewindable.
+            decodeScaled(temp, ICON_PX)?.let { writePng(it, Storage.customIconFile(context, uuid)) }
         } catch (e: Exception) {
-            dest.delete()
             null
         } finally {
-            bitmap.recycle()
+            temp.delete()
         }
+    }
+
+    /** False when the source runs past [limit], leaving a partial file to delete. */
+    private fun copyBounded(input: InputStream, dest: File, limit: Long): Boolean {
+        var total = 0L
+        input.use { src ->
+            dest.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = src.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > limit) return false
+                    out.write(buf, 0, n)
+                }
+            }
+        }
+        return true
+    }
+
+    private fun writePng(bitmap: Bitmap, dest: File): File? = try {
+        dest.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        dest
+    } catch (e: Exception) {
+        dest.delete()
+        null
+    } finally {
+        bitmap.recycle()
     }
 
     /**

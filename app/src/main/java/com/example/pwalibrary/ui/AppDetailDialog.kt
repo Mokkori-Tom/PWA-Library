@@ -10,19 +10,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.pwalibrary.R
 import com.example.pwalibrary.data.AppEntity
+import com.example.pwalibrary.data.AppRepository.Companion.MAX_NAME_CHARS
 import com.example.pwalibrary.data.FolderGrant
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,6 +53,10 @@ fun AppDetailDialog(
     onDismiss: () -> Unit,
     folders: List<FolderGrant>,
     onRevokeFolder: (FolderGrant) -> Unit,
+    onRename: () -> Unit,
+    onRestoreName: () -> Unit,
+    onChangeIcon: () -> Unit,
+    onClearIcon: () -> Unit,
     onAddToHome: () -> Unit,
     onShare: () -> Unit,
     onExport: () -> Unit,
@@ -87,6 +103,18 @@ fun AppDetailDialog(
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
 
+                ActionRow(Icons.Filled.DriveFileRenameOutline, "名前を変更", onRename)
+                if (app.nameIsCustom) {
+                    ActionRow(Icons.Filled.Restore, "名前を元に戻す", onRestoreName)
+                }
+                ActionRow(Icons.Filled.Image, "アイコンを変更", onChangeIcon)
+                if (app.iconIsCustom) {
+                    ActionRow(Icons.Filled.Restore, "アイコンを元に戻す", onClearIcon)
+                }
+
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider()
+
                 ActionRow(Icons.Filled.Home, stringResource(R.string.add_to_home), onAddToHome)
                 ActionRow(Icons.Filled.Share, stringResource(R.string.share_zip), onShare)
                 ActionRow(Icons.Filled.SaveAlt, stringResource(R.string.export_zip), onExport)
@@ -101,6 +129,50 @@ fun AppDetailDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        }
+    )
+}
+
+/**
+ * Renaming is its own dialog rather than an inline field, so that the name is
+ * committed in one deliberate step; a field that saved as you typed would
+ * rename the pinned home screen icon on every keystroke.
+ */
+@Composable
+fun RenameDialog(app: AppEntity, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember(app.uuid) { mutableStateOf(app.name) }
+    val trimmed = text.trim()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("名前を変更") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= MAX_NAME_CHARS) text = it },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (app.importName.isNotBlank() && app.importName != trimmed) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "zip が名乗っている名前: ${app.importName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(trimmed) },
+                enabled = trimmed.isNotEmpty() && trimmed != app.name
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -135,6 +207,51 @@ private fun ActionRow(
             Text(label, color = tint)
         }
     }
+}
+
+/**
+ * Asked when an incoming zip shares a name with an installed app and agrees on
+ * nothing else — no manifest id, no matching bytes.
+ *
+ * Updating reuses the app's origin, so the mini-app keeps the data it saved.
+ * Adding keeps both. Neither is safe to assume, which is why this is a question.
+ */
+@Composable
+fun ImportChoiceDialog(
+    incomingName: String,
+    candidate: AppEntity,
+    onUpdate: () -> Unit,
+    onAddNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("同じ名前のアプリがあります") },
+        text = {
+            Column {
+                Text(
+                    "取り込もうとしている zip は「${incomingName}」と名乗っています。" +
+                        "一覧の「${candidate.name}」と同じ名前ですが、" +
+                        "同じアプリかどうかは zip からは分かりませんでした。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                ActionRow(Icons.Filled.Refresh, "「${candidate.name}」を更新", onUpdate)
+                ActionRow(Icons.Filled.Add, "別のアプリとして追加", onAddNew)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "更新すると、このアプリが保存したデータは残ったまま中身が入れ替わります。" +
+                        "別のアプリとして追加すると、2 つが並びます。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
 }
 
 @Composable

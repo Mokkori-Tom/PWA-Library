@@ -820,6 +820,46 @@ def data_icon():
     })
 
 
+# ------------------------------------------------- same name, no other identity
+
+@case
+def same_name():
+    """Two builds of one app that share only a name.
+
+    No manifest, so there is no id to match on, and the bytes differ, so the
+    hash does not match either. All the installer has is the <title>, which is
+    a hint and not an identity — the user gets asked which it is.
+
+    The counter is what makes the answer visible: updating reuses the app's
+    uuid, and therefore its origin, so localStorage survives. Adding as a new
+    app gets a fresh origin and starts over.
+    """
+    def build(rev, colour, note):
+        body = f"""
+<p style="font-size:40px;margin:8px 0;color:{colour}"><b>{rev}</b></p>
+<p>版: <b>{rev}</b>。manifest.json はありません。<code>&lt;title&gt;</code> だけが
+「棚卸しメモ」と名乗っています。</p>
+<p>起動回数: <code id="n">-</code></p>
+<p class='note'>{note}</p>
+<script>
+(function () {{
+  var n = (parseInt(localStorage.getItem('runs') || '0', 10) || 0) + 1;
+  localStorage.setItem('runs', String(n));
+  document.getElementById('n').textContent = n;
+}})();
+</script>
+"""
+        return {"index.html": page("棚卸しメモ", body)}
+
+    write("18a-samename-v1.zip", build(
+        "v1", "#2563eb",
+        "先にこちらを取り込む。何も尋ねられずに追加されるのが正しい。"))
+    write("18b-samename-v2.zip", build(
+        "v2", "#b91c1c",
+        "18a のあとに取り込むと「同じ名前のアプリがあります」と尋ねられる。"
+        "更新を選べば起動回数が引き継がれ、別アプリとして追加を選べば 1 から始まる。"))
+
+
 # --------------------------------------------------------------- negative cases
 
 @case

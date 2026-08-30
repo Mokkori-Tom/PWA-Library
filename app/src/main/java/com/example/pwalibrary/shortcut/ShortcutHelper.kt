@@ -29,7 +29,7 @@ object ShortcutHelper {
         if (!isPinSupported(context)) return false
 
         val bitmap = IconStore.adaptiveBitmap(app.iconPath?.let { File(it) }, app.name)
-        val label = app.shortName.ifBlank { app.name }
+        val label = shortLabelFor(app)
 
         val shortcut = ShortcutInfoCompat.Builder(context, shortcutIdFor(app.uuid))
             .setShortLabel(label.take(20))
@@ -59,12 +59,20 @@ object ShortcutHelper {
         }
     }
 
-    /** Refreshes the pinned icon and label after an update. */
+    /**
+     * The manifest's short_name is the better label right up until the user
+     * picks a name of their own, at which point it is the manifest disagreeing
+     * with them.
+     */
+    private fun shortLabelFor(app: AppEntity): String =
+        if (app.nameIsCustom) app.name else app.shortName.ifBlank { app.name }
+
+    /** Refreshes the pinned icon and label after an update or an edit. */
     fun refresh(context: Context, app: AppEntity) {
         if (app.shortcutId == null) return
         val bitmap = IconStore.adaptiveBitmap(app.iconPath?.let { File(it) }, app.name)
         val shortcut = ShortcutInfoCompat.Builder(context, shortcutIdFor(app.uuid))
-            .setShortLabel(app.shortName.ifBlank { app.name }.take(20))
+            .setShortLabel(shortLabelFor(app).take(20))
             .setLongLabel(app.name.take(40))
             .setIcon(IconCompat.createWithAdaptiveBitmap(bitmap))
             .setIntent(WebAppActivity.intentFor(context, app.uuid))

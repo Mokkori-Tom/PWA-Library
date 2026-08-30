@@ -19,6 +19,8 @@ import com.example.pwalibrary.data.AppEntity
 import com.example.pwalibrary.data.AppRepository
 import com.example.pwalibrary.ui.AppDetailDialog
 import com.example.pwalibrary.ui.DeleteConfirmDialog
+import com.example.pwalibrary.ui.ImportChoiceDialog
+import com.example.pwalibrary.ui.RenameDialog
 import com.example.pwalibrary.ui.LibraryScreen
 import com.example.pwalibrary.ui.LibraryViewModel
 import com.example.pwalibrary.ui.PwaLibraryTheme
@@ -37,17 +39,28 @@ class MainActivity : ComponentActivity() {
             "multipart/x-zip",
             "application/octet-stream"
         )
+
+        /** Anything BitmapFactory might read; the decode is what actually decides. */
+        private val IMAGE_MIME_TYPES = arrayOf("image/*")
     }
 
     private var viewModelRef: LibraryViewModel? = null
     private var pendingUpdateUuid: String? = null
     private var pendingExport: AppEntity? = null
+    private var pendingIconFor: AppEntity? = null
 
     private val importLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             val uuid = pendingUpdateUuid
             pendingUpdateUuid = null
             if (uri != null) viewModelRef?.install(uri, uuid)
+        }
+
+    private val iconLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val app = pendingIconFor
+            pendingIconFor = null
+            if (uri != null && app != null) viewModelRef?.setIcon(app, uri)
         }
 
     private val exportLauncher =
@@ -66,9 +79,15 @@ class MainActivity : ComponentActivity() {
 
             val apps by vm.apps.collectAsState()
             val busy by vm.busy.collectAsState()
+            val pendingChoice by vm.pendingChoice.collectAsState()
             val snackbarHostState = remember { SnackbarHostState() }
 
-            var detailsFor by remember { mutableStateOf<AppEntity?>(null) }
+            // Held by uuid rather than by value: an edit replaces the row, and
+            // a dialog holding the old copy would keep showing the old name and
+            // offer to undo a change that has already been undone.
+            var detailUuid by remember { mutableStateOf<String?>(null) }
+            val detailsFor = detailUuid?.let { uuid -> apps.firstOrNull { it.uuid == uuid } }
+            var renameTarget by remember { mutableStateOf<String?>(null) }
             var deleteTarget by remember { mutableStateOf<AppEntity?>(null) }
 
             LaunchedEffect(vm) {
@@ -95,7 +114,7 @@ class MainActivity : ComponentActivity() {
                     onLaunch = { app ->
                         startActivity(WebAppActivity.intentFor(this, app.uuid))
                     },
-                    onDetails = { detailsFor = it }
+                    onDetails = { detailUuid = it.uuid }
                 )
 
                 detailsFor?.let { app ->
@@ -106,29 +125,65 @@ class MainActivity : ComponentActivity() {
                         app = app,
                         folders = folders,
                         onRevokeFolder = { vm.revokeFolder(it) },
-                        onDismiss = { detailsFor = null },
+                        onDismiss = { detailUuid = null },
+                        // Renaming swaps one dialog for another rather than
+                        // stacking them. The instant edits below keep the sheet
+                        // open instead, because their result shows up in it.
+                        onRename = {
+                            detailUuid = null
+                            renameTarget = app.uuid
+                        },
+                        onRestoreName = { vm.restoreName(app) },
+                        onChangeIcon = {
+                            pendingIconFor = app
+                            iconLauncher.launch(IMAGE_MIME_TYPES)
+                        },
+                        onClearIcon = { vm.clearIcon(app) },
                         onAddToHome = {
-                            detailsFor = null
+                            detailUuid = null
                             vm.addToHome(app)
                         },
                         onShare = {
-                            detailsFor = null
+                            detailUuid = null
                             vm.share(app)
                         },
                         onExport = {
-                            detailsFor = null
+                            detailUuid = null
                             pendingExport = app
                             exportLauncher.launch(AppRepository.exportFileName(app))
                         },
                         onUpdate = {
-                            detailsFor = null
+                            detailUuid = null
                             pendingUpdateUuid = app.uuid
                             importLauncher.launch(ZIP_MIME_TYPES)
                         },
                         onDelete = {
-                            detailsFor = null
+                            detailUuid = null
                             deleteTarget = app
                         }
+                    )
+                }
+
+                renameTarget?.let { uuid ->
+                    apps.firstOrNull { it.uuid == uuid }?.let { app ->
+                        RenameDialog(
+                            app = app,
+                            onDismiss = { renameTarget = null },
+                            onConfirm = { name ->
+                                renameTarget = null
+                                vm.rename(app, name)
+                            }
+                        )
+                    }
+                }
+
+                pendingChoice?.let { choice ->
+                    ImportChoiceDialog(
+                        incomingName = choice.incomingName,
+                        candidate = choice.candidate,
+                        onUpdate = { vm.resolveChoice(choice, asUpdate = true) },
+                        onAddNew = { vm.resolveChoice(choice, asUpdate = false) },
+                        onDismiss = { vm.cancelChoice(choice) }
                     )
                 }
 

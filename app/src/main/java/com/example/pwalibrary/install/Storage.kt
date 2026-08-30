@@ -8,7 +8,8 @@ import java.io.File
  *
  *   apps/<uuid>/        extracted mini-app, served by WebViewAssetLoader
  *   originals/<uuid>.zip  the zip exactly as imported, kept for re-sharing
- *   icons/<uuid>.png    normalised 192px icon
+ *   icons/<uuid>.png    normalised 192px icon derived from the app
+ *   icons/<uuid>-custom.png  icon the user picked, when they picked one
  */
 object Storage {
 
@@ -26,6 +27,14 @@ object Storage {
 
     fun iconFile(context: Context, uuid: String) = File(iconsRoot(context), "$uuid.png")
 
+    /**
+     * The icon the user chose, kept alongside the derived one rather than
+     * overwriting it. An import can then keep the derived icon current without
+     * touching the choice, and clearing the choice has something to fall back to.
+     */
+    fun customIconFile(context: Context, uuid: String) =
+        File(iconsRoot(context), "$uuid-custom.png")
+
     /** Staging area for share intents; exposed through FileProvider. */
     fun shareRoot(context: Context) = File(context.cacheDir, "share").apply { mkdirs() }
 
@@ -34,5 +43,6 @@ object Storage {
         stagingDir(context, uuid).deleteRecursively()
         originalZip(context, uuid).delete()
         iconFile(context, uuid).delete()
+        customIconFile(context, uuid).delete()
     }
 }

@@ -19,11 +19,21 @@ interface AppDao {
     @Query("SELECT * FROM apps WHERE manifest_id = :manifestId LIMIT 1")
     suspend fun findByManifestId(manifestId: String): AppEntity?
 
-    @Query("SELECT * FROM apps WHERE manifest_id = :manifestId AND name = :name LIMIT 1")
-    suspend fun findByManifestIdAndName(manifestId: String, name: String): AppEntity?
+    @Query("SELECT * FROM apps WHERE manifest_id = :manifestId AND import_name = :importName LIMIT 1")
+    suspend fun findByManifestIdAndImportName(manifestId: String, importName: String): AppEntity?
 
     @Query("SELECT * FROM apps WHERE zip_sha256 = :hash LIMIT 1")
     suspend fun findByZipHash(hash: String): AppEntity?
+
+    /**
+     * Both names are checked: an app the user renamed should still be offered
+     * as the target when a new build of the zip it came from arrives.
+     */
+    @Query(
+        "SELECT * FROM apps WHERE name COLLATE NOCASE = :name " +
+            "OR import_name COLLATE NOCASE = :name LIMIT 1"
+    )
+    suspend fun findByAnyName(name: String): AppEntity?
 
     @Query("UPDATE apps SET needs_storage_reset = 0 WHERE uuid = :uuid")
     suspend fun clearStorageResetFlag(uuid: String)

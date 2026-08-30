@@ -62,6 +62,7 @@ python3 samples/build-samples.py
 - `01`〜`08` — ルート検出 / start_url / MIME / viewport 注入などの構造テスト
 - `02`, `15`, `16` — manifest なしの zip の名前とアイコン
 - `17` — manifest に埋め込まれた `data:` URI アイコン
+- `18a`, `18b` — 同名で他に手がかりのない zip（更新か新規かを尋ねる）
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）
 
 `samples/hello/` と `samples/diag/` がソース。編集して再生成すると
@@ -82,6 +83,8 @@ python3 samples/build-samples.py
   レンダラークラッシュ復帰、ファイル選択、requestFullscreen / 動画フルスクリーン)
 - ホーム画面へのピン留め (アダプティブアイコン、アプリごとの recents エントリ)
 - 削除、同一 manifest id での更新 (更新時に古い Service Worker キャッシュを破棄)
+- 取り込み後の名前・アイコンの編集。編集した内容は以降の更新で上書きされない
+- 名前しか一致しない zip が来たときの「更新か、別のアプリとして追加か」の確認
 - zip の保存 (SAF) と共有 (FileProvider)。取り込んだ zip をそのまま渡すので、
   受け取った相手のファイルと 1 バイトも変わらない
 - ダウンロードの保存 (blob / data URL / アプリ内ファイル)。SAF で保存先を選ぶ
@@ -91,6 +94,9 @@ python3 samples/build-samples.py
 ## 未実装
 
 - カテゴリ / タグ / 検索 (カラムだけ用意してある)
+- SVG アイコンのラスタライズ。Android に SVG デコーダが無く、第三者ライブラリか
+  オフスクリーンの WebView が要る。実機で通した実物はすべて PNG を同梱していた
+  ので見送った。SVG しか無い zip でも、利用者が自分で画像を選べる
 
 ## 既知の Android 側の制約
 

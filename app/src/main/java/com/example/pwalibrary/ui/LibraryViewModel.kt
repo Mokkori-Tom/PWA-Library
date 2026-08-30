@@ -28,6 +28,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    /** Non-null while an import is waiting to be told whether it is an update. */
+    private val _pendingChoice = MutableStateFlow<InstallOutcome.NeedsChoice?>(null)
+    val pendingChoice: StateFlow<InstallOutcome.NeedsChoice?> = _pendingChoice.asStateFlow()
+
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
 
@@ -39,13 +43,69 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (_busy.value) return
         viewModelScope.launch {
             _busy.value = true
-            val message = when (val outcome = repository.install(uri, forceUuid)) {
-                is InstallOutcome.Installed -> "${outcome.app.name} を追加しました"
-                is InstallOutcome.Updated -> "${outcome.app.name} を更新しました"
-                is InstallOutcome.Failed -> outcome.message
-            }
+            val outcome = repository.install(uri, forceUuid)
             _busy.value = false
-            _messages.send(message)
+            report(outcome)
+        }
+    }
+
+    /** [asUpdate] false means the user chose to keep both apps. */
+    fun resolveChoice(choice: InstallOutcome.NeedsChoice, asUpdate: Boolean) {
+        _pendingChoice.value = null
+        viewModelScope.launch {
+            _busy.value = true
+            val outcome = repository.resolveChoice(
+                choice.token,
+                if (asUpdate) choice.candidate.uuid else null
+            )
+            _busy.value = false
+            report(outcome)
+        }
+    }
+
+    fun cancelChoice(choice: InstallOutcome.NeedsChoice) {
+        _pendingChoice.value = null
+        repository.cancelChoice(choice.token)
+    }
+
+    private suspend fun report(outcome: InstallOutcome) {
+        when (outcome) {
+            is InstallOutcome.Installed -> _messages.send("${outcome.app.name} を追加しました")
+            is InstallOutcome.Updated -> _messages.send("${outcome.app.name} を更新しました")
+            is InstallOutcome.Failed -> _messages.send(outcome.message)
+            // Not a result yet: the dialog is the next step.
+            is InstallOutcome.NeedsChoice -> _pendingChoice.value = outcome
+        }
+    }
+
+    fun rename(app: AppEntity, name: String) {
+        viewModelScope.launch {
+            val updated = repository.rename(app, name)
+            if (updated != null) _messages.send("${updated.name} に変更しました")
+        }
+    }
+
+    fun restoreName(app: AppEntity) {
+        viewModelScope.launch {
+            val updated = repository.restoreName(app)
+            _messages.send("${updated.name} に戻しました")
+        }
+    }
+
+    fun setIcon(app: AppEntity, source: Uri) {
+        viewModelScope.launch {
+            val updated = repository.setCustomIcon(app, source)
+            _messages.send(
+                if (updated != null) "アイコンを変更しました"
+                else "この画像は読み込めませんでした"
+            )
+        }
+    }
+
+    fun clearIcon(app: AppEntity) {
+        viewModelScope.launch {
+            repository.clearCustomIcon(app)
+            _messages.send("アイコンを元に戻しました")
         }
     }
 

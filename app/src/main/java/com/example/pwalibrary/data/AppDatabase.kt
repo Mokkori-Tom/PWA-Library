@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AppEntity::class, FolderGrant::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -21,6 +21,20 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var instance: AppDatabase? = null
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE apps ADD COLUMN import_name TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE apps ADD COLUMN name_is_custom INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE apps ADD COLUMN icon_is_custom INTEGER NOT NULL DEFAULT 0")
+                // Nothing could rename an app before this version, so every
+                // existing row's name is the one its zip declared. Without the
+                // backfill, update matching on a relative manifest id would
+                // compare against an empty string and stop recognising apps it
+                // has always recognised.
+                db.execSQL("UPDATE apps SET import_name = name")
+            }
+        }
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -61,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "pwa_library.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }

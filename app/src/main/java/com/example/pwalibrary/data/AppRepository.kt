@@ -18,11 +18,23 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 sealed interface InstallOutcome {
     data class Installed(val app: AppEntity) : InstallOutcome
     data class Updated(val app: AppEntity, val previousVersion: String) : InstallOutcome
     data class Failed(val message: String) : InstallOutcome
+
+    /**
+     * The zip resembles an existing app by name and by nothing else, which is
+     * not enough to overwrite it and too much to ignore. The staged zip is held
+     * under [token] until the caller answers.
+     */
+    data class NeedsChoice(
+        val token: String,
+        val candidate: AppEntity,
+        val incomingName: String
+    ) : InstallOutcome
 }
 
 class AppRepository(private val context: Context) {
@@ -30,6 +42,13 @@ class AppRepository(private val context: Context) {
     private val dao = AppDatabase.get(context).appDao()
     private val grantDao = AppDatabase.get(context).folderGrantDao()
     private val installer = ZipInstaller(context)
+
+    /**
+     * Zips staged but not yet committed, waiting on a "update or add?" answer.
+     * Emptied by answering or cancelling; anything stranded by a killed process
+     * is swept on next launch by [ZipInstaller.sweepStagedZips].
+     */
+    private val awaitingChoice = ConcurrentHashMap<String, StagedZip>()
 
     fun observeApps(): Flow<List<AppEntity>> = dao.observeAll()
 
@@ -50,22 +69,69 @@ class AppRepository(private val context: Context) {
         } catch (e: Exception) {
             return@withContext InstallOutcome.Failed("取り込みに失敗しました。")
         }
+        complete(staged, forceUuid, mayAsk = forceUuid == null)
+    }
 
+    /**
+     * Finishes an import the user was asked about. [targetUuid] is the app to
+     * overwrite, or null to add the zip as a new app despite the resemblance.
+     */
+    suspend fun resolveChoice(token: String, targetUuid: String?): InstallOutcome =
+        withContext(Dispatchers.IO) {
+            val staged = awaitingChoice.remove(token)
+                ?: return@withContext InstallOutcome.Failed("取り込みをやり直してください。")
+            complete(staged, targetUuid, mayAsk = false)
+        }
+
+    fun cancelChoice(token: String) {
+        awaitingChoice.remove(token)?.let { installer.discard(it) }
+    }
+
+    /**
+     * Imports a staged zip, replacing an existing app when something identifies
+     * one.
+     *
+     * [forceUuid] pins the target when the user explicitly picked an app;
+     * otherwise identity comes from the manifest, then from the zip's own
+     * bytes. When neither answers and [mayAsk] is set, a name collision is
+     * referred back to the user rather than guessed at.
+     */
+    private suspend fun complete(
+        staged: StagedZip,
+        forceUuid: String?,
+        mayAsk: Boolean
+    ): InstallOutcome {
+        var parked = false
         try {
             val manifest = staged.manifest
             val manifestId = (manifest?.id ?: manifest?.name)?.let { normalizeManifestId(it) }
 
             // Needed before the lookup, because a relative id has to be paired
-            // with the name to be safe to match on.
-            val incomingName = contentName(staged) ?: staged.fallbackName
+            // with a name to be safe to match on. This is the name the zip
+            // declares, never the one the user may have chosen since.
+            val importName = contentName(staged) ?: staged.fallbackName
 
             // Falling back to the content hash means re-importing a zip this
             // app exported updates the entry it came from instead of adding a
             // duplicate, even when the zip has no manifest to identify it.
             val existing = when {
                 forceUuid != null -> dao.findByUuid(forceUuid)
-                else -> manifestId?.let { matchByManifest(it, incomingName) }
+                else -> manifestId?.let { matchByManifest(it, importName) }
                     ?: dao.findByZipHash(staged.sha256)
+            }
+
+            // Sharing a name is a hint, not an identity: two unrelated apps can
+            // pick the same one, and merging them would destroy one. It is also
+            // the only clue a manifest-less rebuild leaves, so it is worth a
+            // question even though it is not worth acting on.
+            if (existing == null && mayAsk) {
+                val sameName = dao.findByAnyName(importName)
+                if (sameName != null) {
+                    val token = UUID.randomUUID().toString()
+                    awaitingChoice[token] = staged
+                    parked = true
+                    return InstallOutcome.NeedsChoice(token, sameName, importName)
+                }
             }
 
             // Reusing the uuid keeps the https origin stable, which is what keeps
@@ -73,12 +139,24 @@ class AppRepository(private val context: Context) {
             val uuid = existing?.uuid ?: UUID.randomUUID().toString()
             val appDir = installer.commit(staged, uuid)
 
-            // Anything the zip says about itself outranks the stored name, so
-            // an update can rename the app. The name of the file it arrived in
-            // does not: renaming the file must not rename the app.
-            val name = contentName(staged) ?: existing?.name ?: staged.fallbackName
+            // A name the user chose outranks everything: renaming is a decision
+            // about this app, and an update is still the same app. Failing that,
+            // what the zip says about itself outranks the stored name, so an
+            // update can still rename. The name of the file it arrived in never
+            // does — renaming the file must not rename the app.
+            val name = if (existing?.nameIsCustom == true) {
+                existing.name
+            } else {
+                contentName(staged) ?: existing?.name ?: staged.fallbackName
+            }
 
-            val icon = IconStore.extract(context, uuid, appDir, manifest, staged.html.iconHrefs)
+            // The derived icon is refreshed even when a custom one is in effect,
+            // so that clearing the choice later lands on this zip's icon rather
+            // than on whatever shipped when the app was first imported.
+            val derived = IconStore.extract(context, uuid, appDir, manifest, staged.html.iconHrefs)
+            if (derived == null) Storage.iconFile(context, uuid).delete()
+            val custom = Storage.customIconFile(context, uuid)
+                .takeIf { existing?.iconIsCustom == true && it.isFile }
             val now = System.currentTimeMillis()
 
             val entity = AppEntity(
@@ -86,9 +164,14 @@ class AppRepository(private val context: Context) {
                 uuid = uuid,
                 manifestId = manifestId ?: existing?.manifestId,
                 name = name,
+                importName = importName,
+                nameIsCustom = existing?.nameIsCustom ?: false,
                 shortName = manifest?.shortName ?: existing?.shortName ?: "",
                 description = manifest?.description ?: existing?.description ?: "",
-                iconPath = icon?.absolutePath,
+                iconPath = (custom ?: derived)?.absolutePath,
+                // Self-healing: a flag left set by a file that has since gone
+                // missing would otherwise pin the app to a null icon forever.
+                iconIsCustom = custom != null,
                 startUrl = resolveStartUrl(manifest, appDir),
                 displayMode = manifest?.display ?: existing?.displayMode ?: "standalone",
                 themeColor = manifest?.themeColor ?: existing?.themeColor,
@@ -106,7 +189,7 @@ class AppRepository(private val context: Context) {
                 tags = existing?.tags ?: "[]"
             )
 
-            if (existing == null) {
+            return if (existing == null) {
                 val id = dao.insert(entity)
                 InstallOutcome.Installed(entity.copy(id = id))
             } else {
@@ -117,11 +200,12 @@ class AppRepository(private val context: Context) {
                 InstallOutcome.Updated(entity, existing.version)
             }
         } catch (e: InstallException) {
-            InstallOutcome.Failed(e.message ?: "展開に失敗しました。")
+            return InstallOutcome.Failed(e.message ?: "展開に失敗しました。")
         } catch (e: Exception) {
-            InstallOutcome.Failed("展開に失敗しました。")
+            return InstallOutcome.Failed("展開に失敗しました。")
         } finally {
-            installer.discard(staged)
+            // Not while a dialog still needs it.
+            if (!parked) installer.discard(staged)
         }
     }
 
@@ -137,6 +221,53 @@ class AppRepository(private val context: Context) {
         staged.manifest?.name?.takeIf { it.isNotBlank() }
             ?: staged.manifest?.shortName?.takeIf { it.isNotBlank() }
             ?: staged.html.title
+
+    // ------------------------------------------------------------------ edits
+
+    /**
+     * Renames an app and records that the name is the user's from now on, so
+     * later imports stop overwriting it.
+     *
+     * [updatedAt] is deliberately left alone: it is shown as the date the app's
+     * files last changed, and renaming changes no files.
+     */
+    suspend fun rename(app: AppEntity, rawName: String): AppEntity? = withContext(Dispatchers.IO) {
+        val name = rawName.trim().take(MAX_NAME_CHARS)
+        if (name.isEmpty() || name == app.name) return@withContext null
+        val updated = app.copy(name = name, nameIsCustom = true)
+        dao.update(updated)
+        ShortcutHelper.refresh(context, updated)
+        updated
+    }
+
+    /** Puts back the name the zip declared, and lets imports drive it again. */
+    suspend fun restoreName(app: AppEntity): AppEntity = withContext(Dispatchers.IO) {
+        val updated = app.copy(
+            name = app.importName.ifBlank { app.name },
+            nameIsCustom = false
+        )
+        dao.update(updated)
+        ShortcutHelper.refresh(context, updated)
+        updated
+    }
+
+    suspend fun setCustomIcon(app: AppEntity, source: Uri): AppEntity? = withContext(Dispatchers.IO) {
+        val icon = IconStore.importCustom(context, app.uuid, source) ?: return@withContext null
+        val updated = app.copy(iconPath = icon.absolutePath, iconIsCustom = true)
+        dao.update(updated)
+        ShortcutHelper.refresh(context, updated)
+        updated
+    }
+
+    /** Drops the chosen icon and falls back to the one derived from the zip. */
+    suspend fun clearCustomIcon(app: AppEntity): AppEntity = withContext(Dispatchers.IO) {
+        Storage.customIconFile(context, app.uuid).delete()
+        val derived = Storage.iconFile(context, app.uuid).takeIf { it.isFile }
+        val updated = app.copy(iconPath = derived?.absolutePath, iconIsCustom = false)
+        dao.update(updated)
+        ShortcutHelper.refresh(context, updated)
+        updated
+    }
 
     fun observeGrants(appUuid: String): Flow<List<FolderGrant>> = grantDao.observeForApp(appUuid)
 
@@ -252,9 +383,9 @@ class AppRepository(private val context: Context) {
      * different apps would destroy one of them, which is far worse than leaving
      * a duplicate behind.
      */
-    private suspend fun matchByManifest(manifestId: String, name: String): AppEntity? =
+    private suspend fun matchByManifest(manifestId: String, importName: String): AppEntity? =
         if (isRelativeId(manifestId)) {
-            dao.findByManifestIdAndName(manifestId, name)
+            dao.findByManifestIdAndImportName(manifestId, importName)
         } else {
             dao.findByManifestId(manifestId)
         }
@@ -278,6 +409,10 @@ class AppRepository(private val context: Context) {
         dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     companion object {
+
+        /** Matches the cap [exportFileName] applies, so a name always survives export. */
+        const val MAX_NAME_CHARS = 60
+
         /**
          * Exports usually land on shared storage, so the name has to survive
          * FAT/exFAT rules rather than just Linux ones.

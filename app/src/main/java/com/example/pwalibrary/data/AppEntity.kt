@@ -30,6 +30,20 @@ data class AppEntity(
 
     val name: String,
 
+    /**
+     * The name the zip declared for itself, untouched by any renaming.
+     *
+     * Update matching compares against this. A relative manifest id is only
+     * distinctive when paired with a name, and pairing it with a name the user
+     * has since changed would stop recognising the app's own updates.
+     */
+    @ColumnInfo(name = "import_name", defaultValue = "''")
+    val importName: String = "",
+
+    /** The user set [name]. An import must not overwrite it. */
+    @ColumnInfo(name = "name_is_custom", defaultValue = "0")
+    val nameIsCustom: Boolean = false,
+
     @ColumnInfo(name = "short_name")
     val shortName: String = "",
 
@@ -38,6 +52,10 @@ data class AppEntity(
     /** Absolute path of the extracted icon PNG, or null to fall back to a generated one. */
     @ColumnInfo(name = "icon_path")
     val iconPath: String? = null,
+
+    /** The user chose the icon at [iconPath]. An import must not overwrite it. */
+    @ColumnInfo(name = "icon_is_custom", defaultValue = "0")
+    val iconIsCustom: Boolean = false,
 
     /** Entry point relative to the app root, e.g. "index.html" or "sub/start.html". */
     @ColumnInfo(name = "start_url")
