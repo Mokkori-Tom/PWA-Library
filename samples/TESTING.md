@@ -123,7 +123,21 @@ python3 samples/build-samples.py
 | 追記のたびに上書きされる | `FileSystemShim` の `seek` / `keepExistingData` |
 | 一覧が空 | `FolderAccess.list` |
 
-8. もう一度「フォルダを選ぶ」→ **選択画面が出る**（別のフォルダに変えられる）
+8. もう一度「フォルダを選ぶ」→ **選択画面が出る**（別のフォルダに変えられる）。
+   選び直したフォルダに切り替わり、追記が 1 行だけの新しいファイルになる
+9. **選択画面表示中の Activity 回収**。開発者向けオプションの「アプリ」セクションで
+   「アクティビティを保持しない」を ON（「ウィンドウ管理」ではない。adb なら
+   `adb shell settings put global always_finish_activities 1`）。SAF が前面に出た
+   時点でこの Activity は破棄される
+
+   | 見る場所 | 期待 |
+   |---|---|
+   | 戻ったとき | クラッシュしない。ページは作り直されている（`log` が空） |
+   | 「フォルダ:」欄 | **今選んだフォルダ**。前のフォルダ名や「未選択」なら競争に負けている（HANDOVER「4.」参照）|
+   | 追記 | 今選んだフォルダに 1 行だけ書かれる |
+   | もう一度「フォルダを選ぶ」 | 選択画面が出る。「処理中です」なら `pendingDirectoryRequest` が復帰後に残っている |
+
+   確認したら開発者向けオプションを OFF に戻す
 
 選択画面での戻るキーは、階層を一つ上に遡る。これは Android のファイル選択画面
 (DocumentsUI) 自身の動作で、こちらからは制御できない。上まで遡るとアプリに戻り、
@@ -148,6 +162,25 @@ python3 samples/build-samples.py
 ---
 
 ## 実際の PWA
-合成テストでは出ない壊れ方があるので、最後に手元の実アプリを 1〜2 本入れる。
-ビルド済みの SPA（Vite/Next の静的出力）は
-`<script type="module">`・絶対パス参照・history フォールバックを一度に踏むので効率が良い。
+合成テストでは出ない壊れ方があるので、最後に実ビルドを入れる。ビルド済みの SPA
+（Vite / Next の静的出力）は `<script type="module">`・絶対パス参照・
+history フォールバックを一度に踏むので効率が良い。
+
+`samples/real-vite/` がその 1 本（Vite + React Router + Workbox）。生成方法は
+そこの README を見る。**npm が要る**ので `build-samples.py` には入れていない。
+
+1. `real-vite-BUILD1.zip` を取り込む → 名前が「実 PWA テスト (Vite SPA)」、
+   アイコンが画像（頭文字タイルなら `manifest.webmanifest` を拾えていない）
+2. 起動 → **現在のパスが `/`**（`/index.html` だと SPA は 404 を出す）
+3. 「遅延チャンク」→ 実行時のチャンク取得
+4. 診断行が「登録済み・**制御中**」になるまで（未制御なら開き直す）
+5. 「About」→「このパスで再読み込み」→ **About が復帰する**。SW が未制御の状態でも
+   復帰すれば `WebAppActivity` の history フォールバックが効いている
+6. `real-vite-BUILD2.zip` を取り込む → 一覧は 1 個のまま `BUILD-2` に変わり、
+   **カウントは残る**
+
+| 外れたら | 見る場所 |
+|---|---|
+| 起動直後に 404 | `AppAssetRegistry.urlFor` |
+| 再読み込みで白画面 | `WebAppActivity.shouldInterceptRequest` の 404 フォールバック |
+| 画面が真っ白（初回から） | `LocalFilePathHandler.MIME_TYPES`、module script の配信 |
