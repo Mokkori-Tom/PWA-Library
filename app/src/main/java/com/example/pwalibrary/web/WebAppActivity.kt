@@ -222,7 +222,7 @@ class WebAppActivity : ComponentActivity() {
 
         currentApp = app
         val loader = AppAssetRegistry.loaderFor(app.uuid, appDir)
-        val view = createWebView(app.uuid, loader)
+        val view = createWebView(loader)
         webView = view
 
         // Scoped to this one app: FileBridge filters every lookup by uuid, so a
@@ -274,7 +274,7 @@ class WebAppActivity : ComponentActivity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun createWebView(uuid: String, loader: androidx.webkit.WebViewAssetLoader): WebView {
+    private fun createWebView(loader: androidx.webkit.WebViewAssetLoader): WebView {
         val view = WebView(this)
 
         view.settings.apply {
@@ -304,14 +304,10 @@ class WebAppActivity : ComponentActivity() {
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val response = loader.shouldInterceptRequest(request.url)
-                // History fallback, the same deal a static host gives an SPA:
-                // /about is a client-side route, not a file, so a real reload
-                // there would otherwise return an empty 404. Restricted to
-                // main-frame navigation, so a missing script or image still
-                // fails as a missing script or image.
+                // Restricted to main-frame navigation, so a missing script or
+                // image still fails as a missing script or image.
                 if (response != null && response.statusCode == 404 && request.isForMainFrame) {
-                    val root = Uri.parse(AppAssetRegistry.baseUrl(uuid))
-                    loader.shouldInterceptRequest(root)?.let { if (it.statusCode == 200) return it }
+                    resolveNavigation(loader, request.url)?.let { return it }
                 }
                 return response
             }
@@ -421,6 +417,38 @@ class WebAppActivity : ComponentActivity() {
         }
 
         return view
+    }
+
+    /**
+     * Answers a navigation that matched no file, in the order a static host
+     * would.
+     *
+     * The two shapes need different answers and both turn up in real builds. A
+     * Next export writes `about.html`, so `/about` has to find that file; a
+     * Vite SPA writes one index.html and expects every route to land on it.
+     * Trying `.html` and a directory index before the shell serves both: Next
+     * gets its page, and an SPA falls through to the shell as before.
+     */
+    private fun resolveNavigation(
+        loader: androidx.webkit.WebViewAssetLoader,
+        url: Uri
+    ): WebResourceResponse? {
+        val path = url.path.orEmpty().trimEnd('/')
+        val candidates = mutableListOf<String>()
+        // Skipped for a path that already names a file: /logo.png is missing,
+        // not a route, and /logo.png.html is nobody's file.
+        if (path.isNotEmpty() && !path.substringAfterLast('/').contains('.')) {
+            candidates += "$path.html"
+            candidates += "$path/index.html"
+        }
+        candidates += "/"
+
+        for (candidate in candidates) {
+            val target = url.buildUpon().path(candidate).clearQuery().fragment(null).build()
+            val response = loader.shouldInterceptRequest(target)
+            if (response != null && response.statusCode == 200) return response
+        }
+        return null
     }
 
     private fun openExternally(url: Uri) {

@@ -248,7 +248,7 @@ history フォールバックを一度に踏むので効率が良い。
 
 | 外れたら | 見る場所 |
 |---|---|
-| 4 でホームが出る / 404 ページになる | `WebAppActivity` のフォールバックが `index.html` を返している。`.html` を試す必要がある |
+| 4 でホームが出る（URL は `/about` のまま） | `WebAppActivity.resolveNavigation` が `about.html` を見つけられていない |
 | 3 で遷移しない | `LocalFilePathHandler.MIME_TYPES` の `txt` |
 | アイコンが頭文字タイル | `manifest.webmanifest` を拾えていない |
 
