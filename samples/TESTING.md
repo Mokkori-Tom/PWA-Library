@@ -76,6 +76,7 @@ python3 samples/build-samples.py
 | `16-title-generic` | 雛形の既定 title を捨てる | 名前が `16-title-generic` | `HtmlHead` の `GENERIC_TITLES` |
 | `17-data-icon` | manifest 内の `data:` URI アイコン | アイコンがオレンジの四角 | `IconStore.decodeDataUri` |
 | `18a` / `18b` | 同名で他に手がかりのない zip | 下記参照 | `AppRepository.complete` の `findByAnyName` |
+| `19a` / `19b` | `<link rel="manifest">` からしか辿れない manifest | 下記参照 | `ZipInstaller.readManifest` |
 
 ### 08 の手順（app shell 型 SW での更新）
 編集は不要。2 つの zip を順に取り込むだけ。
@@ -241,6 +242,44 @@ data URI をそのまま返すことは Mac 上で確認済みで、その先は
 **尋ねすぎないことも確認する。** `08a` → `08b` は manifest id が一致するので
 **ダイアログが出てはいけない**。出るなら確信のある更新まで質問に落ちている。
 
+### 19 の手順（`<link rel="manifest">` からしか辿れない manifest）
+manifest は入っているが、名前が `site.webmanifest` で、場所を教えているのは
+`<link rel="manifest">` だけ。favicon ジェネレータが吐くのがこの名前なので、
+手書きの PWA では珍しくない形。
+
+rev 1 では **この manifest は無かったことになっていた**（実機で確認済み。4 つの
+観測が全部そちらを指した）。`HtmlHead.manifestHref` と
+`InstallPaths.entryForHref` を入れて**辿るようにしたので、いまは退行テスト**。
+manifest 側が正解になる。
+
+manifest とページの `<head>` は**わざと食い違わせて**ある。どちらを読んだかが
+一覧の名前とアイコンに出る。
+
+| 見えたもの | 意味 |
+|---|---|
+| 名前 **19 リンクされた manifest** / **紫**のアイコン | **OK**。`<link rel="manifest">` を辿れている |
+| 名前 **手書きの棚卸しツール** / **緑**のアイコン | **退行**。rev 1 のときの挙動に戻っている |
+
+**rev 1 の 19 が一覧に残っていたら先に消すこと。** rev 1 は manifest を読めて
+いなかったので `manifest_id` が空で、名前も「手書きの棚卸しツール」で入っている。
+rev 2 とはどの手がかりでも一致しないため、消さずに取り込むとカードが増える。
+
+1. `19a-linked-manifest` を取り込む → 名前が **19 リンクされた manifest**、
+   アイコンが **紫**
+2. 起動する → `display: fullscreen` が効いて **ステータスバーが消える**。起動回数が 1
+3. 閉じて開き直し、起動回数を 3 まで進める
+4. `19b-linked-manifest-v2` を取り込む
+
+**4 が本題。** 2 本は同じ `id`（`test.linkedmanifest`）を名乗っている。
+
+| 4 で起きたこと | 意味 |
+|---|---|
+| **何も尋ねられずに更新**され、赤い v2 / 起動回数 4 | **OK**。id が読めている |
+| 「同じ名前のアプリがあります」が出る | **退行**。id が読めておらず、同一性がハッシュに落ちている |
+| カードが 2 枚に増える | 名前も一致していない。`HtmlHead` の `<title>` を疑う |
+
+2 枚並んだときは詳細ダイアログのサイズで見分ける（v1 が 3,338 B、v2 が 3,520 B）。
+
 ### 名前とアイコンの編集
 zip は要らない。詳細ダイアログの上段に並ぶ。
 
@@ -371,6 +410,64 @@ history フォールバックを一度に踏むので効率が良い。
 | 3 で遷移しない | `LocalFilePathHandler.MIME_TYPES` の `txt` |
 | アイコンが頭文字タイル | `manifest.webmanifest` を拾えていない |
 
+### base をサブパスにしたビルド
+`samples/real-vite/` を `APP_BASE=/app/` でビルドしたもの。ソースは同じで、
+出力だけが `/app/` 配下前提になる。生成方法はそこの README。
+
+rev 1 では**白画面だった**（実機で確認済み）。`/app/assets/…` の絶対パスが 404 に
+なり、サブリソースの 404 は肩代わりの対象外（`isForMainFrame` のみ）だったため。
+それでいて `manifest.webmanifest` はルート直下なので**見つかり**、icons が相対の
+まま出るので、**一覧では名前もアイコンも正常に見えていた**。取り込みが成功した
+ようにしか見えないのが厄介なところだった。
+
+いまは `InstallPaths.installSubpath` が manifest の `scope` / `start_url` を読み、
+**その接頭辞が zip の中に無いときだけ `appDir/app/` に展開する**。配信も
+`urlFor` も SW スコープも既存のまま辻褄が合う。
+
+1. `real-vite-base-BUILD1.zip` を取り込む → 名前「実 PWA テスト (base=/app/)」、
+   アイコンは青い四角
+2. 起動する → **ホームが描画される**。「現在のパス」が **`/`**
+   （`basename` が `/app/` なので、ルーターから見た `/app/` は `/`）
+3. 「遅延チャンク」→ チャンクが取れる
+4. 診断行が「登録済み・**制御中**」になるまで（未制御なら開き直す）
+5. 「About」→「このパスで再読み込み」→ **About が復帰する**
+6. `real-vite-base-wrapped.zip` を取り込む
+
+**6 が二つ目の狙い。** 中身は 1 と同じ出力を `app/` フォルダごと包んだもの。
+`ZipInstaller.inspect` が `app/` を剥がしたあと、同じ判定に掛かって同じ場所に
+戻される。**包み方が違っても同じ結果になる**のが正しい。
+
+| 外れたら | 意味 |
+|---|---|
+| **白画面** | 接頭辞が効いていない。`InstallPaths.installSubpath`（`scope` を読めているか）|
+| 起動はするがアイコンが頭文字タイル | `IconStore.extract` に `contentDir` ではなく `appDir` を渡している |
+| 5 で白 | `resolveNavigation` の最後の候補にアプリの根が入っていない（`appRootPath`）|
+| 6 でカードが **2 枚**に増えた | manifest id (`real.vite.spa.base`) での照合が効いていない |
+
+**`real-vite-BUILD1/2`（既定 base）と `real-next` も一度通すこと。** 接頭辞の判定は
+全アプリの展開経路に入ったので、`scope: "/"` が今までどおり「接頭辞なし」に落ちる
+ことを確かめる意味がある。
+
+#### SW なしの入れ子（`real-vite-base-nosw.zip`）
+
+**5 で誰が答えたかは、この 1 本でしか分からない。** SW が制御していると Workbox の
+`navigateFallback` が答えてしまうので、`resolveNavigation` にアプリの根を足した
+分が効いているかは区別できない。この zip は manifest と `base` はそのままに
+**Service Worker を持たない**（`basePath` を付けた Next の静的出力と同じ形）。
+
+1. 取り込む → 名前「実 PWA テスト (base, SW なし)」で、**別のカード**として増える
+   （id が違うので更新にはならない）
+2. 起動 → ホームが描画され、診断行の Service Worker が **「未登録」**
+   （「登録済み」と出たら zip の作り方が違う。この確認は成立しない）
+3. 「About」→ **「このパスで再読み込み」**
+
+| 3 で起きたこと | 意味 |
+|---|---|
+| **About が復帰する** | `WebAppActivity.appRootPath` が効いている。SW がいないので、答えられるのは native の 404 フォールバックだけ |
+| **白画面** | 入れ子のアプリ根が候補に入っていない。`resolveNavigation` |
+
+4. 「遅延チャンク」でも同じことをする（`/heavy` で再読み込み）
+
 ### fieldform（他人が書いた実アプリ）
 ビルド不要の素の静的サイト。オフライン前提のフォーム作成・データ収集ツールで、
 **CSP で `connect-src 'none'`**、Service Worker なし、`start_url` と `scope` が
@@ -389,8 +486,9 @@ MIT。リポジトリには取り込まず、必要なときに上で作る。
 | 取り込み・起動 | 名前が「fieldform」、アイコンが画像。`start_url: "."` でも起動する |
 | フォームを作る（フィールド追加・並べ替え・必須） | 動く |
 | Collect で保存 → 件数が増える | 動く。閉じて開き直しても残る（localStorage） |
-| **CSV / JSON エクスポート** | **現状は失敗する**（確認済み）。`<a download>` + blob URL を `setDownloadListener` が断っている。**fieldform 側は「Exported 2 rows to CSV」と成功表示を出す**ので、画面だけ見ていると気づけない |
-| Export form → Import form | 出力ができないので、往復は現状確認できない |
+| **CSV / JSON エクスポート** | **保存できる**（確認済み）。保存先を選ぶ画面が出て、ファイル名は `<a download>` のもの（`site-survey-20260830-1023.csv`）。`connect-src 'none'` の下でも読めているのは `DownloadShim` が Blob を保持して FileReader で読むため |
+| Export form → Import form | 往復できる |
+| **保存を断ったとき** | ファイルは残らないが、**fieldform は「Exported 2 rows to CSV」と成功表示を出したまま**になる。成否をページに返す方法はないので、これは直せない（HANDOVER「4.」）|
 
-エクスポートは fieldform の主機能なので、ダウンロード対応（SAF で保存する）を
-入れたらここが最初の検証対象になる。
+エクスポートは fieldform の主機能で、ダウンロード対応（SAF で保存する）を
+入れたときの最初の検証対象がここだった。

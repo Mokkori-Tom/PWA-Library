@@ -68,6 +68,7 @@ python3 samples/build-samples.py
 - `02`, `15`, `16` — manifest なしの zip の名前とアイコン
 - `17` — manifest に埋め込まれた `data:` URI アイコン
 - `18a`, `18b` — 同名で他に手がかりのない zip（更新か新規かを尋ねる）
+- `19a`, `19b` — `<link rel="manifest">` からしか辿れない manifest
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）
 
 `samples/hello/` と `samples/diag/` がソース。編集して再生成すると
@@ -83,12 +84,17 @@ python3 samples/build-samples.py
   `<link rel="icon">` をアイコンの候補に。**拒否はしない** — manifest は動作に
   必要でなく（start_url は index.html、display は standalone に落ちる）、
   エラーを見るのは zip を受け取った側で、manifest を足せる立場にないため
+
+  manifest はルート直下の `manifest.json` / `manifest.webmanifest` を先に探し、
+  無ければ **`<link rel="manifest">` を辿る**。`site.webmanifest` を使う手書きの
+  PWA でも、名前・アイコン・display・start_url・**id** が読める
 - Room への保存、2列グリッドの一覧
 - WebView 実行 (Service Worker 対応、フルスクリーン、Back 制御、
   レンダラークラッシュ復帰、ファイル選択、requestFullscreen / 動画フルスクリーン)
 - ホーム画面へのピン留め (アダプティブアイコン、アプリごとの recents エントリ)
 - 削除、同一 manifest id での更新 (更新時に古い Service Worker キャッシュを破棄)
 - 取り込み後の名前・アイコンの編集。編集した内容は以降の更新で上書きされない
+- サブパス配下前提のビルド (`base: "/app/"`) の展開先の補正
 - 名前しか一致しない zip が来たときの「更新か、別のアプリとして追加か」の確認
 - zip の保存 (SAF) と共有 (FileProvider)。取り込んだ zip をそのまま渡すので、
   受け取った相手のファイルと 1 バイトも変わらない
@@ -102,6 +108,20 @@ python3 samples/build-samples.py
 - SVG アイコンのラスタライズ。Android に SVG デコーダが無く、第三者ライブラリか
   オフスクリーンの WebView が要る。実機で通した実物はすべて PNG を同梱していた
   ので見送った。SVG しか無い zip でも、利用者が自分で画像を選べる
+
+## サブパス配下前提のビルド
+
+`base` を `/app/` に設定してビルドした出力は、`/app/assets/…` という絶対パスを
+書く。zip はビルド出力の中身から作られるので、そのままではどこにも当たらず
+**アプリが白く開く** —— それでいて `manifest.webmanifest` はルート直下にあるため、
+一覧では名前もアイコンも正常に見えてしまう。取り込みが成功したようにしか
+見えないのが、この壊れ方の厄介なところだった。
+
+対処は配信側ではなく展開側に置いた。manifest の `scope` / `start_url` が宣言する
+接頭辞が **zip の中に無いときだけ**、`appDir/` ではなく `appDir/app/` に展開する。
+ビルドが信じている場所にファイルを置くだけなので、配信も起動 URL も
+Service Worker のスコープも既存のまま辻褄が合い、他のアプリには何の影響もない。
+zip が本当にその名前のフォルダを含んでいる場合は、その言い分を採って何もしない。
 
 ## 既知の Android 側の制約
 

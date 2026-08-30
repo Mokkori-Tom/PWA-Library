@@ -9,6 +9,8 @@ data class WebManifest(
     val shortName: String? = null,
     val description: String? = null,
     val startUrl: String? = null,
+    /** Read only to spot a build that expects to be served under a subpath. */
+    val scope: String? = null,
     val display: String? = null,
     val themeColor: String? = null,
     val version: String? = null,
@@ -26,6 +28,7 @@ data class WebManifest(
                 shortName = o.optStringOrNull("short_name"),
                 description = o.optStringOrNull("description"),
                 startUrl = o.optStringOrNull("start_url"),
+                scope = o.optStringOrNull("scope"),
                 display = o.optStringOrNull("display"),
                 themeColor = o.optStringOrNull("theme_color"),
                 // Not part of the spec, but commonly present and useful to show.

@@ -1,11 +1,13 @@
 import com.example.pwalibrary.install.HtmlHead
+import com.example.pwalibrary.install.InstallPaths
 
 /**
- * Checks HtmlHead without a device or a Gradle build.
+ * Checks the installer's pure parts without a device or a Gradle build.
  *
- * HtmlHead is the one part of the installer that is pure text handling, and the
- * one whose failures are silent — a title that simply does not appear, an icon
- * link that is quietly skipped. Run by tools/typecheck.sh.
+ * HtmlHead and InstallPaths are the parts that are text and path handling only,
+ * and the ones whose failures are silent — a title that simply does not appear,
+ * an icon link quietly skipped, a manifest never found, an app that opens
+ * blank. Run by tools/typecheck.sh.
  */
 
 var pass = 0
@@ -25,6 +27,8 @@ fun check(label: String, actual: Any?, expected: Any?) {
 
 fun title(html: String): String? = HtmlHead.parse(html.toByteArray(Charsets.UTF_8)).title
 fun icons(html: String): List<String> = HtmlHead.parse(html.toByteArray(Charsets.UTF_8)).iconHrefs
+fun manifestHref(html: String): String? =
+    HtmlHead.parse(html.toByteArray(Charsets.UTF_8)).manifestHref
 
 fun main() {
     println("--- title ---")
@@ -146,6 +150,104 @@ fun main() {
                 "</head>"
         ),
         listOf("raster.png", "vec.png")
+    )
+
+    println("--- manifest link ---")
+    check(
+        "plain",
+        manifestHref("<head><link rel=\"manifest\" href=\"site.webmanifest\"></head>"),
+        "site.webmanifest"
+    )
+    check(
+        "absent",
+        manifestHref("<head><link rel=\"icon\" href=\"a.png\"></head>"),
+        null
+    )
+    check(
+        "uppercase and unquoted",
+        manifestHref("<HEAD><LINK REL=MANIFEST HREF=app.json></HEAD>"),
+        "app.json"
+    )
+    check(
+        "first wins",
+        manifestHref(
+            "<head><link rel=\"manifest\" href=\"a.json\">" +
+                "<link rel=\"manifest\" href=\"b.json\"></head>"
+        ),
+        "a.json"
+    )
+    check(
+        "not confused by icon links",
+        manifestHref(
+            "<head><link rel=\"icon\" href=\"a.png\">" +
+                "<link rel=\"manifest\" href=\"m.json\"></head>"
+        ),
+        "m.json"
+    )
+    check(
+        "body link ignored",
+        manifestHref("<head></head><body><link rel=\"manifest\" href=\"late.json\">"),
+        null
+    )
+    check(
+        "manifest link is not an icon",
+        icons("<head><link rel=\"manifest\" href=\"site.webmanifest\"></head>"),
+        emptyList<String>()
+    )
+
+    println("--- entryForHref ---")
+    check("relative", InstallPaths.entryForHref("", "site.webmanifest"), "site.webmanifest")
+    check("dot slash", InstallPaths.entryForHref("", "./site.webmanifest"), "site.webmanifest")
+    check("subdirectory", InstallPaths.entryForHref("", "static/m.json"), "static/m.json")
+    check("site absolute", InstallPaths.entryForHref("", "/m.json"), "m.json")
+    check("inside wrapper", InstallPaths.entryForHref("my-app/", "m.json"), "my-app/m.json")
+    check(
+        "wrapper with site absolute",
+        InstallPaths.entryForHref("my-app/", "/m.json"),
+        "my-app/m.json"
+    )
+    check("query dropped", InstallPaths.entryForHref("", "m.json?v=5"), "m.json")
+    check("fragment dropped", InstallPaths.entryForHref("", "m.json#x"), "m.json")
+    check("traversal refused", InstallPaths.entryForHref("my-app/", "../m.json"), null)
+    check("buried traversal refused", InstallPaths.entryForHref("", "a/../../m.json"), null)
+    check("http refused", InstallPaths.entryForHref("", "https://x.test/m.json"), null)
+    check("protocol relative refused", InstallPaths.entryForHref("", "//x.test/m.json"), null)
+    check("data uri refused", InstallPaths.entryForHref("", "data:application/json,{}"), null)
+    check("empty refused", InstallPaths.entryForHref("", "   "), null)
+    check("root refused", InstallPaths.entryForHref("", "/"), null)
+    check("colon in a path segment is not a scheme", InstallPaths.entryForHref("", "a/b:c.json"), "a/b:c.json")
+
+    println("--- installSubpath ---")
+    val flat = setOf("index.html", "assets", "icons", "manifest.webmanifest")
+    check("no manifest values", InstallPaths.installSubpath(null, null, flat), "")
+    check("root scope", InstallPaths.installSubpath("/", "/", flat), "")
+    check("relative scope (fieldform)", InstallPaths.installSubpath(".", ".", flat), "")
+    check("subpath scope", InstallPaths.installSubpath("/app/", "/app/", flat), "app/")
+    check(
+        "subpath from start_url alone",
+        InstallPaths.installSubpath(null, "/app/", flat),
+        "app/"
+    )
+    check(
+        "start_url naming a file",
+        InstallPaths.installSubpath(null, "/app/index.html", flat),
+        "app/"
+    )
+    check("scope wins over start_url", InstallPaths.installSubpath("/a/", "/b/", flat), "a/")
+    check("nested subpath", InstallPaths.installSubpath("/a/b/", null, flat), "a/b/")
+    check(
+        "zip already contains the directory",
+        InstallPaths.installSubpath("/app/", "/app/", flat + "app"),
+        ""
+    )
+    check("full url ignored", InstallPaths.installSubpath("https://x.test/app/", null, flat), "")
+    check("traversal refused", InstallPaths.installSubpath("/../app/", null, flat), "")
+    check("too deep refused", InstallPaths.installSubpath("/a/b/c/d/e/", null, flat), "")
+    check("query stripped", InstallPaths.installSubpath(null, "/app/?src=pwa", flat), "app/")
+    check(
+        "root-level start_url naming a file",
+        InstallPaths.installSubpath(null, "/index.html", flat),
+        ""
     )
 
     println()

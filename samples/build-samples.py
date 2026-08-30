@@ -860,6 +860,78 @@ def same_name():
         "更新を選べば起動回数が引き継がれ、別アプリとして追加を選べば 1 から始まる。"))
 
 
+# ------------------------------------------------ manifest linked from the page
+
+@case
+def linked_manifest():
+    """A manifest that exists but does not sit where the installer looks.
+
+    Hand-written PWAs routinely name it site.webmanifest (what favicon
+    generators emit) and point at it from <link rel="manifest">. ZipInstaller
+    only opens manifest.json / manifest.webmanifest at the root and never reads
+    the link, so the prediction is that this manifest is missed entirely.
+
+    Every observable is set so the two answers cannot be confused: the manifest
+    and the page disagree about the name, about the icon, and about display.
+    The counter makes the second, more consequential half visible — a missed
+    manifest means a missed id, which drops identity down to the zip hash and
+    turns every rebuild into the "same name" question from case 18.
+
+    rev 1 established that the manifest was missed. The installer now follows
+    the link, so this is a regression test: the manifest side of every
+    disagreement is the correct answer.
+    """
+    def build(rev, colour, note):
+        head = ('<link rel="manifest" href="site.webmanifest">\n'
+                '<link rel="icon" href="assets/link-icon.png" sizes="192x192">')
+        body = f"""
+<p style="font-size:40px;margin:8px 0;color:{colour}"><b>{rev}</b></p>
+<p>版: <b>rev 2 / {rev}</b>。manifest は <code>site.webmanifest</code> という名前で、
+<code>&lt;link rel="manifest"&gt;</code> からのみ辿れます。</p>
+<p>起動回数: <code id="n">-</code></p>
+<hr>
+<p class='note'>manifest と、このページの &lt;head&gt; は<b>わざと食い違わせて</b>あります。
+一覧の名前とアイコンが、どちらを読んだかを表します。</p>
+<ul>
+  <li>名前 <b>19 リンクされた manifest</b> / <b>紫</b>のアイコン / ステータスバーが<b>消える</b>
+      → <span class='ok'>OK</span>。&lt;link rel="manifest"&gt; を辿れている</li>
+  <li>名前 <b>手書きの棚卸しツール</b> / <b>緑</b>のアイコン / ステータスバーが<b>見える</b>
+      → <span class='ng'>退行</span>。manifest を読めていない（rev 1 のときの挙動）</li>
+</ul>
+<p class='note'>{note}</p>
+<script>
+(function () {{
+  var n = (parseInt(localStorage.getItem('runs') || '0', 10) || 0) + 1;
+  localStorage.setItem('runs', String(n));
+  document.getElementById('n').textContent = n;
+}})();
+</script>
+"""
+        return {
+            "index.html": page("手書きの棚卸しツール", body, head=head),
+            # Not manifest.json and not at a name the installer probes for.
+            "site.webmanifest": manifest(
+                id="test.linkedmanifest", name="19 リンクされた manifest",
+                short_name="19 リンク", start_url="index.html", display="fullscreen",
+                theme_color="#7c3aed",
+                icons=[{"src": "assets/manifest-icon.png", "sizes": "512x512",
+                        "type": "image/png"}]),
+            # Purple: only reachable through the manifest.
+            "assets/manifest-icon.png": png((0x7c, 0x3a, 0xed)),
+            # Green: only reachable through the page's <link rel="icon">.
+            "assets/link-icon.png": png((0x15, 0x80, 0x3d)),
+        }
+
+    write("19a-linked-manifest.zip", build(
+        "v1", "#2563eb",
+        "先にこちらを取り込む。何も尋ねられずに追加されるのが正しい。"))
+    write("19b-linked-manifest-v2.zip", build(
+        "v2", "#b91c1c",
+        "19a のあとに取り込む。2 本は同じ id を名乗っているので、"
+        "<b>何も尋ねられずに更新</b>され、起動回数が引き継がれるのが正しい。"
+        "「同じ名前のアプリがあります」と尋ねられたら、id が読めていない。"))
+
+
 # --------------------------------------------------------------- negative cases
 
 @case

@@ -146,6 +146,10 @@ class WebAppActivity : ComponentActivity() {
     private var pendingStorageReset = false
 
     private var currentApp: AppEntity? = null
+
+    /** "/" normally, "/app/" for a build extracted under a declared subpath. */
+    private var appRootPath: String = "/"
+
     /** Known from the intent, unlike [currentApp] which waits on a database read. */
     private var appUuid: String? = null
     /** Set while a mini-app's showDirectoryPicker() call is waiting on SAF. */
@@ -221,6 +225,8 @@ class WebAppActivity : ComponentActivity() {
         configureServiceWorkers()
 
         currentApp = app
+        appRootPath = app.startUrl.substringBeforeLast('/', "")
+            .let { if (it.isEmpty()) "/" else "/$it/" }
         val loader = AppAssetRegistry.loaderFor(app.uuid, appDir)
         val view = createWebView(loader)
         webView = view
@@ -442,6 +448,11 @@ class WebAppActivity : ComponentActivity() {
             candidates += "$path/index.html"
         }
         candidates += "/"
+        // A build deployed under a subpath is extracted under one, so its shell
+        // is not at "/" — that request finds nothing and falls through to here.
+        // Added after "/" so an app living at the root is answered exactly as
+        // before, without a directory index further in ever outranking it.
+        appRootPath.takeIf { it != "/" }?.let { candidates += it }
 
         for (candidate in candidates) {
             val target = url.buildUpon().path(candidate).clearQuery().fragment(null).build()

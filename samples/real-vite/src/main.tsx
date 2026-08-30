@@ -6,7 +6,10 @@ import './index.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    {/* '/' for the default build; '/app/' when APP_BASE moves the deployment
+        under a subpath. A real subpath deployment has to do this or its own
+        router matches nothing. */}
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <App />
     </BrowserRouter>
   </StrictMode>,

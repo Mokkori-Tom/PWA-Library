@@ -138,6 +138,9 @@ class AppRepository(private val context: Context) {
             // the mini-app's localStorage and IndexedDB alive across an update.
             val uuid = existing?.uuid ?: UUID.randomUUID().toString()
             val appDir = installer.commit(staged, uuid)
+            // Everything the zip wrote is relative to this, which is the app
+            // directory itself unless the build declared a subpath.
+            val contentDir = staged.contentRootIn(appDir)
 
             // A name the user chose outranks everything: renaming is a decision
             // about this app, and an update is still the same app. Failing that,
@@ -153,7 +156,7 @@ class AppRepository(private val context: Context) {
             // The derived icon is refreshed even when a custom one is in effect,
             // so that clearing the choice later lands on this zip's icon rather
             // than on whatever shipped when the app was first imported.
-            val derived = IconStore.extract(context, uuid, appDir, manifest, staged.html.iconHrefs)
+            val derived = IconStore.extract(context, uuid, contentDir, manifest, staged.html.iconHrefs)
             if (derived == null) Storage.iconFile(context, uuid).delete()
             val custom = Storage.customIconFile(context, uuid)
                 .takeIf { existing?.iconIsCustom == true && it.isFile }
@@ -172,7 +175,10 @@ class AppRepository(private val context: Context) {
                 // Self-healing: a flag left set by a file that has since gone
                 // missing would otherwise pin the app to a null icon forever.
                 iconIsCustom = custom != null,
-                startUrl = resolveStartUrl(manifest, appDir),
+                // Stored relative to the app directory, which is what the
+                // asset loader serves and what urlFor turns into a URL.
+                startUrl = staged.installSubpath +
+                    resolveStartUrl(manifest, contentDir, staged.installSubpath),
                 displayMode = manifest?.display ?: existing?.displayMode ?: "standalone",
                 themeColor = manifest?.themeColor ?: existing?.themeColor,
                 zipFilePath = Storage.originalZip(context, uuid).absolutePath,
@@ -358,20 +364,32 @@ class AppRepository(private val context: Context) {
      * manifest.json's start_url is relative to the manifest, which lives at the
      * app root. Anything that does not resolve to a real file falls back to
      * index.html, whose presence was already verified at import.
+     *
+     * The answer is relative to the app's own files, so a build extracted under
+     * a subpath gets that subpath put back by the caller rather than here.
      */
-    private fun resolveStartUrl(manifest: WebManifest?, appDir: File): String {
+    private fun resolveStartUrl(
+        manifest: WebManifest?,
+        contentDir: File,
+        subpath: String
+    ): String {
         val raw = manifest?.startUrl?.trim().orEmpty()
         if (raw.isEmpty() || raw == "/" || raw == "./") return "index.html"
 
         val cleaned = raw.removePrefix("./").removePrefix("/")
         if (Uri.parse(cleaned).scheme != null) return "index.html"
 
-        val path = cleaned.substringBefore('?').substringBefore('#')
-        val candidate = File(appDir, path)
-        val root = appDir.canonicalPath + File.separator
+        // A build served from a subpath writes that subpath into its start_url,
+        // but the file it names sits under the subpath rather than repeating it.
+        val relative = cleaned.removePrefix(subpath)
+
+        val path = relative.substringBefore('?').substringBefore('#')
+        if (path.isEmpty()) return "index.html"
+        val candidate = File(contentDir, path)
+        val root = contentDir.canonicalPath + File.separator
         val inside = runCatching { candidate.canonicalPath.startsWith(root) }.getOrDefault(false)
 
-        return if (inside && candidate.isFile) cleaned else "index.html"
+        return if (inside && candidate.isFile) relative else "index.html"
     }
 
     /**

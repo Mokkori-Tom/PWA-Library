@@ -21,6 +21,12 @@ class StagedZip(
     val tempZip: File,
     /** "" for a flat zip, "myapp/" when the zip contains a wrapping folder. */
     val rootPrefix: String,
+    /**
+     * "" normally; "app/" when the manifest says the build expects to be served
+     * from a subpath the zip does not contain. The files are extracted that far
+     * down so the absolute paths the build emitted resolve.
+     */
+    val installSubpath: String,
     val manifest: WebManifest?,
     /** What the root index.html says about itself. Carries the load when there is no manifest. */
     val html: HtmlHead,
@@ -28,7 +34,17 @@ class StagedZip(
     val totalBytes: Long,
     /** Identity of last resort for zips that carry no manifest. */
     val sha256: String
-)
+) {
+    /**
+     * Where this zip's own files sit inside an app directory.
+     *
+     * Everything that resolves a path the app wrote — its start_url, its icons —
+     * has to start here rather than at the app directory, which is one level up
+     * whenever [installSubpath] is set.
+     */
+    fun contentRootIn(appDir: File): File =
+        if (installSubpath.isEmpty()) appDir else File(appDir, installSubpath)
+}
 
 /**
  * Extracts imported zips. Every zip here comes from an untrusted source (a chat
@@ -61,19 +77,25 @@ class ZipInstaller(private val context: Context) {
         val temp = File.createTempFile("import-", ".zip", context.cacheDir)
         try {
             val sha256 = copyUriToFile(uri, temp)
-            val (prefix, totalBytes) = inspect(temp)
+            val inspection = inspect(temp)
+            val prefix = inspection.rootPrefix
             // One open for both: the manifest and the page are read from the
-            // same central directory.
+            // same central directory. The page is read first because it is what
+            // says where a manifest not sitting at a conventional name lives.
             val (manifest, html) = openZip(temp).use { zf ->
-                readManifest(zf, prefix) to readHtmlHead(zf, prefix)
+                val head = readHtmlHead(zf, prefix)
+                readManifest(zf, prefix, head.manifestHref) to head
             }
             return StagedZip(
                 tempZip = temp,
                 rootPrefix = prefix,
+                installSubpath = InstallPaths.installSubpath(
+                    manifest?.scope, manifest?.startUrl, inspection.topLevel
+                ),
                 manifest = manifest,
                 html = html,
                 fallbackName = displayName(uri).removeSuffix(".zip").ifBlank { "アプリ" },
-                totalBytes = totalBytes,
+                totalBytes = inspection.totalBytes,
                 sha256 = sha256
             )
         } catch (e: Throwable) {
@@ -136,13 +158,21 @@ class ZipInstaller(private val context: Context) {
 
     // ------------------------------------------------------------- validation
 
-    /** Returns the detected root prefix and the declared uncompressed size. */
-    private fun inspect(zip: File): Pair<String, Long> =
+    /** What one pass over the central directory establishes about a zip. */
+    private class Inspection(
+        val rootPrefix: String,
+        val totalBytes: Long,
+        /** Names directly under the root, used to tell a declared subpath apart from a real one. */
+        val topLevel: Set<String>
+    )
+
+    private fun inspect(zip: File): Inspection =
         openZip(zip).use { zf ->
             var count = 0
             var total = 0L
             var bestIndex: String? = null
             var bestDepth = Int.MAX_VALUE
+            val names = ArrayList<String>()
 
             val entries = zf.entries()
             while (entries.hasMoreElements()) {
@@ -161,6 +191,8 @@ class ZipInstaller(private val context: Context) {
                 if (name.startsWith("/") || name.startsWith("\\") || name.contains("..")) {
                     throw InstallException("zip に不正なパスが含まれています: $name")
                 }
+
+                names += name
 
                 if (!entry.isDirectory) {
                     val size = entry.size
@@ -190,7 +222,17 @@ class ZipInstaller(private val context: Context) {
             val index = bestIndex
                 ?: throw InstallException("index.html が見つかりません。Web アプリの zip か確認してください。")
             val prefix = index.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
-            prefix to total
+
+            // Collected after the prefix is known, because that is what the
+            // names have to be relative to.
+            val topLevel = names
+                .filter { it.startsWith(prefix) }
+                .mapNotNull {
+                    it.removePrefix(prefix).substringBefore('/').takeIf { seg -> seg.isNotEmpty() }
+                }
+                .toSet()
+
+            Inspection(prefix, total, topLevel)
         }
 
     /** Entries produced by macOS' Archive Utility and Finder that nobody wants extracted. */
@@ -205,11 +247,20 @@ class ZipInstaller(private val context: Context) {
         throw InstallException("zip を開けませんでした。壊れている可能性があります。")
     }
 
-    private fun readManifest(zf: ZipFile, prefix: String): WebManifest? {
+    /**
+     * Reads the manifest, wherever the zip keeps it.
+     *
+     * The two conventional names at the root are tried first, then whatever
+     * `<link rel="manifest">` points at. The link is not tried first because it
+     * is the page's claim rather than a fact about the zip, and a page that
+     * links a manifest it did not ship should not stop the real one being read.
+     */
+    private fun readManifest(zf: ZipFile, prefix: String, href: String?): WebManifest? {
         val entry = zf.getEntry("${prefix}manifest.json")
             ?: zf.getEntry("${prefix}manifest.webmanifest")
+            ?: href?.let { InstallPaths.entryForHref(prefix, it) }?.let { zf.getEntry(it) }
             ?: return null
-        if (entry.size > 1024 * 1024) return null
+        if (entry.isDirectory || entry.size > 1024 * 1024) return null
         val text = zf.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
         return WebManifest.parse(text)
     }
@@ -255,10 +306,12 @@ class ZipInstaller(private val context: Context) {
         val target = Storage.appDir(context, uuid)
         val staging = Storage.stagingDir(context, uuid)
         staging.deleteRecursively()
-        if (!staging.mkdirs()) throw InstallException("展開先を作成できませんでした。")
+        // Creates the subpath directories too, when the build asked for them.
+        val contentRoot = staged.contentRootIn(staging)
+        if (!contentRoot.mkdirs()) throw InstallException("展開先を作成できませんでした。")
 
         try {
-            extract(staged.tempZip, staged.rootPrefix, staging)
+            extract(staged.tempZip, staged.rootPrefix, contentRoot)
             target.deleteRecursively()
             if (!staging.renameTo(target)) {
                 throw InstallException("展開したファイルを配置できませんでした。")

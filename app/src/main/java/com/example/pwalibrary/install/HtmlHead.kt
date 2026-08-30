@@ -14,11 +14,21 @@ import java.nio.charset.Charset
 data class HtmlHead(
     val title: String?,
     /** hrefs exactly as the page wrote them, most promising first. */
-    val iconHrefs: List<String>
+    val iconHrefs: List<String>,
+    /**
+     * Where `<link rel="manifest">` says the manifest is, exactly as written.
+     *
+     * The installer probes the two conventional names at the root first; this
+     * is what finds the rest. `site.webmanifest` is what favicon generators
+     * emit, and a hand-written PWA that uses one otherwise loses its manifest
+     * entirely — not just its name and icon but its id, which is what tells an
+     * update apart from a different app.
+     */
+    val manifestHref: String? = null
 ) {
     companion object {
 
-        val EMPTY = HtmlHead(null, emptyList())
+        val EMPTY = HtmlHead(null, emptyList(), null)
 
         /**
          * Reads what the head declares. Callers pass a bounded prefix of the
@@ -27,7 +37,7 @@ data class HtmlHead(
         fun parse(bytes: ByteArray): HtmlHead {
             if (bytes.isEmpty()) return EMPTY
             val region = headRegion(decode(bytes))
-            return HtmlHead(titleIn(region), iconsIn(region))
+            return HtmlHead(titleIn(region), iconsIn(region), manifestIn(region))
         }
 
         // ------------------------------------------------------------ decoding
@@ -126,6 +136,20 @@ data class HtmlHead(
                 .map { it.first }
                 .distinct()
                 .take(MAX_ICONS)
+        }
+
+        /** First `<link rel="manifest">` wins, as it does in a browser. */
+        private fun manifestIn(region: String): String? {
+            for (tag in LINK_TAG.findAll(region)) {
+                val attrs = attributesOf(tag.value)
+                val rel = attrs["rel"].orEmpty().lowercase()
+                    .split(' ', '\t', '\n', '\r')
+                    .filter { it.isNotBlank() }
+                if ("manifest" !in rel) continue
+                val href = unescape(attrs["href"].orEmpty()).trim()
+                if (href.isNotEmpty()) return href
+            }
+            return null
         }
 
         /** "48x48 96x96" -> 96. "any" or missing -> 0. Mirrors WebManifest. */

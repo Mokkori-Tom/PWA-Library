@@ -6,7 +6,7 @@
 # downloaded. It catches what a device round trip is an expensive way to find.
 #
 #   tools/typecheck.sh          type-check only
-#   tools/typecheck.sh --test   also compile and run tools/HtmlHeadTest.kt
+#   tools/typecheck.sh --test   also compile and run tools/InstallerTest.kt
 #
 # Compose is out of reach here — MainActivity and ui/ need the Compose compiler
 # plugin, so those are only checked by an Android Studio build.
@@ -110,7 +110,8 @@ echo "型チェック OK"
 [[ "$1" == "--test" ]] || exit 0
 
 echo
-echo "HtmlHead のテスト"
+echo "インストーラの純粋な部分のテスト（HtmlHead / InstallPaths）"
 "$KOTLIN_HOME/bin/kotlinc" -d "$OUT/test" -nowarn \
-    "$SRC/install/HtmlHead.kt" tools/HtmlHeadTest.kt 2>&1 | grep -v '^warning:' || true
-java -cp "$OUT/test:$KOTLIN_HOME/lib/kotlin-stdlib.jar" HtmlHeadTestKt
+    "$SRC/install/HtmlHead.kt" "$SRC/install/InstallPaths.kt" tools/InstallerTest.kt \
+    2>&1 | grep -v '^warning:' || true
+java -cp "$OUT/test:$KOTLIN_HOME/lib/kotlin-stdlib.jar" InstallerTestKt
