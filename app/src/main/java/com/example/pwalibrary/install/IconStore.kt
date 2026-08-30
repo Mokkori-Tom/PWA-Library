@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
+import android.util.Base64
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
@@ -26,6 +27,13 @@ object IconStore {
 
     /** BitmapFactory decodes neither SVG nor ICO, so those are skipped, not attempted. */
     private val RASTER_EXTENSIONS = setOf("png", "webp", "jpg", "jpeg")
+
+    /** The same refusal, stated the way a data URI states its type. */
+    private val NON_RASTER_MEDIA = setOf(
+        "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"
+    )
+
+    private const val DATA_PREFIX = "data:"
 
     private val FALLBACK_PATHS = listOf(
         "icon.png",
@@ -56,9 +64,7 @@ object IconStore {
     ): File? {
         val bitmap = candidatePaths(manifest, htmlIcons)
             .asSequence()
-            .mapNotNull { resolveInside(appDir, it) }
-            .filter { it.isFile }
-            .mapNotNull { decodeScaled(it, ICON_PX) }
+            .mapNotNull { decodeCandidate(appDir, it) }
             .firstOrNull()
             ?: return null
 
@@ -88,13 +94,69 @@ object IconStore {
     }
 
     /**
-     * The query has to come off before the extension is read: generated
-     * manifests and hand-written links alike cache-bust with "icon.png?v=5",
-     * and testing the extension of "png?v=5" drops a usable icon.
+     * Turns one candidate into a bitmap, whichever form it arrived in: a path
+     * into the app's own files, or an image carried inline in the manifest or
+     * the page.
+     */
+    private fun decodeCandidate(appDir: File, src: String): Bitmap? =
+        if (isDataUri(src)) {
+            decodeDataUri(src)?.let { decodeScaled(it, ICON_PX) }
+        } else {
+            resolveInside(appDir, src)?.takeIf { it.isFile }?.let { decodeScaled(it, ICON_PX) }
+        }
+
+    /**
+     * Whether a candidate is worth attempting at all.
+     *
+     * A file is judged by its extension and a data URI by its declared media
+     * type, which is the better evidence of the two when it exists. For a file
+     * the query has to come off first: generated manifests and hand-written
+     * links alike cache-bust with "icon.png?v=5", and testing the extension of
+     * "png?v=5" throws away a usable icon.
      */
     private fun isRasterisable(src: String): Boolean {
+        if (isDataUri(src)) {
+            val media = mediaTypeOf(src)
+            return media.startsWith("image/") && media !in NON_RASTER_MEDIA
+        }
         val path = src.substringBefore('?').substringBefore('#')
         return path.substringAfterLast('.', "").lowercase() in RASTER_EXTENSIONS
+    }
+
+    private fun isDataUri(src: String): Boolean =
+        src.regionMatches(0, DATA_PREFIX, 0, DATA_PREFIX.length, ignoreCase = true)
+
+    /** "data:image/png;base64,AAA" -> "image/png". Blank when none is declared. */
+    private fun mediaTypeOf(src: String): String =
+        src.substring(DATA_PREFIX.length)
+            .substringBefore(',')
+            .substringBefore(';')
+            .trim()
+            .lowercase()
+
+    /**
+     * The bytes behind a base64 data URI.
+     *
+     * Base64 payloads only. The percent-encoded form is legal but is used in
+     * practice for SVG, which cannot be rasterised here regardless.
+     *
+     * No length cap of its own: a manifest is read at up to 1MB and a page's
+     * head at up to 256KB, so the string reaching here is already bounded. A
+     * data URI cut off by either limit never arrives — truncated JSON fails to
+     * parse, and a link tag with no closing bracket does not match.
+     */
+    private fun decodeDataUri(src: String): ByteArray? {
+        val header = src.substring(DATA_PREFIX.length).substringBefore(',')
+        if (header.split(';').none { it.trim().equals("base64", ignoreCase = true) }) return null
+        // Attribute values may be wrapped across lines; the decoder is not
+        // obliged to tolerate that.
+        val payload = src.substringAfter(',', "").filterNot { it.isWhitespace() }
+        if (payload.isEmpty()) return null
+        return try {
+            Base64.decode(payload, Base64.DEFAULT)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 
     /** Resolves a manifest-relative icon path, refusing anything outside the app dir. */
@@ -111,14 +173,34 @@ object IconStore {
         return if (file.canonicalPath.startsWith(root)) file else null
     }
 
+    private fun decodeScaled(file: File, targetPx: Int): Bitmap? =
+        decodeScaled(targetPx) { BitmapFactory.decodeFile(file.absolutePath, it) }
+
+    private fun decodeScaled(bytes: ByteArray, targetPx: Int): Bitmap? =
+        decodeScaled(targetPx) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+
     /**
-     * Null for anything unreadable, including a file whose header parses and
-     * whose pixels do not — a truncated PNG reports its size happily and then
-     * fails. Throwing here would fail the whole import over one bad icon, and
-     * the caller has both a next candidate and a letter tile to fall back on.
+     * Two passes over the same source: the first reads the dimensions, the
+     * second decodes at a sample size that will not blow up on a large image.
+     *
+     * Null for anything the decoder refuses outright. It does **not** catch a
+     * partially readable image: BitmapFactory returns a truncated PNG as the
+     * rows it managed to read rather than as a failure, so a corrupt icon is
+     * adopted rather than skipped (HANDOVER "4."). Throwing is not an option
+     * either — that would fail the whole import over one bad icon, when the
+     * caller has both a next candidate and a letter tile to fall back on.
      */
-    private fun decodeScaled(file: File, targetPx: Int): Bitmap? = try {
-        decodeScaledOrThrow(file, targetPx)
+    private fun decodeScaled(targetPx: Int, decode: (BitmapFactory.Options) -> Bitmap?): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        decode(bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            null
+        } else {
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, targetPx)
+            }
+            decode(opts)?.let { shrunkToFit(it, targetPx) }
+        }
     } catch (e: Exception) {
         null
     } catch (e: OutOfMemoryError) {
@@ -126,16 +208,7 @@ object IconStore {
         null
     }
 
-    private fun decodeScaledOrThrow(file: File, targetPx: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, targetPx)
-        }
-        val decoded = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-
+    private fun shrunkToFit(decoded: Bitmap, targetPx: Int): Bitmap {
         val longest = max(decoded.width, decoded.height)
         if (longest <= targetPx) return decoded
 

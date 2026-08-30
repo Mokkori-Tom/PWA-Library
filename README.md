@@ -61,6 +61,7 @@ python3 samples/build-samples.py
 - `hello-pwa.zip` — origin 永続化と更新の確認用
 - `01`〜`08` — ルート検出 / start_url / MIME / viewport 注入などの構造テスト
 - `02`, `15`, `16` — manifest なしの zip の名前とアイコン
+- `17` — manifest に埋め込まれた `data:` URI アイコン
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）
 
 `samples/hello/` と `samples/diag/` がソース。編集して再生成すると

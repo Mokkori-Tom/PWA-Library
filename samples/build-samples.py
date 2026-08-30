@@ -6,6 +6,7 @@ detection, manifest handling, MIME resolution, and the two negative cases that
 must be rejected. Written with zipfile because the `zip` CLI refuses to create
 the traversal entry that case 09 needs.
 """
+import base64
 import io
 import os
 import struct
@@ -783,6 +784,40 @@ def title_generic():
 <p><b>Document</b> と出ていたら、雛形の既定値をそのまま名前に採用しています。</p>
 """
     write("16-title-generic.zip", {"index.html": page("Document", body)})
+
+
+@case
+def data_icon():
+    """The icon is carried inside the manifest itself, as a data: URI.
+
+    Two of them, so that skipping still has to work: the SVG is declared the
+    larger and sorts first, and cannot be rasterised. Nothing in the zip is an
+    icon file, so a letter tile means neither data URI was read.
+    """
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">'
+           '<rect width="512" height="512" fill="#dc2626"/></svg>')
+    svg_uri = "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+    png_uri = "data:image/png;base64," + base64.b64encode(png((234, 88, 12))).decode()
+
+    body = """
+<p>版: <b>rev 1</b>。アイコンのファイルは 1 つも入っていません。manifest の
+<code>icons</code> に <code>data:</code> URI が 2 つ書いてあるだけです。</p>
+<p>一覧のアイコンが <b>オレンジの四角</b>なら <span class='ok'>OK</span>。</p>
+<ul>
+  <li>頭文字タイル → data URI を復号していない</li>
+  <li><span class='ng'>赤</span>い四角 → SVG の data URI をラスタライズできて
+      しまっている（残作業 4 が済んでいれば正しい挙動）</li>
+</ul>
+<p class='note'>先に並ぶのは 512 と宣言された SVG の方。オレンジ（192 の PNG）に
+辿り着くには、読めない data URI をひとつ飛ばす必要がある。</p>
+"""
+    write("17-data-icon.zip", {
+        "index.html": page("data URI のアイコン", body),
+        "manifest.json": manifest(
+            id="test.dataicon", name="17 data URI アイコン", start_url="index.html",
+            icons=[{"src": svg_uri, "sizes": "512x512", "type": "image/svg+xml"},
+                   {"src": png_uri, "sizes": "192x192", "type": "image/png"}]),
+    })
 
 
 # --------------------------------------------------------------- negative cases

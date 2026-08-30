@@ -5,7 +5,7 @@ python3 samples/build-samples.py
 ```
 
 `samples/dist/` に全 zip が出る。`samples/hello/` と `samples/diag/` はソース、
-`01`〜`16` は生成専用。番号順に取り込む必要はないが、`09` と `10` は
+`01`〜`17` は生成専用。番号順に取り込む必要はないが、`09` と `10` は
 **失敗するのが正解**なので取り違えないこと。
 
 失敗したときに見る場所を右端に書いてある。
@@ -74,6 +74,7 @@ python3 samples/build-samples.py
 | `14-download` | 書き出したファイルの保存 | 下記参照 | `DownloadShim` / `DownloadBridge` |
 | `15-link-icon` | `<link rel="icon">` を辿る | アイコンが青緑の四角 | `HtmlHead` / `IconStore.candidatePaths` |
 | `16-title-generic` | 雛形の既定 title を捨てる | 名前が `16-title-generic` | `HtmlHead` の `GENERIC_TITLES` |
+| `17-data-icon` | manifest 内の `data:` URI アイコン | アイコンがオレンジの四角 | `IconStore.decodeDataUri` |
 
 ### 08 の手順（app shell 型 SW での更新）
 編集は不要。2 つの zip を順に取り込むだけ。
@@ -188,6 +189,20 @@ zip は同一バイトのときだけ更新扱いになる（`AppRepository` の
 Mac 上で単体実行して確かめられる。手順は HANDOVER の「5. 作業時の注意」。
 確かめられるのはそこまでで、**`BitmapFactory` が何を読めるかは端末でしか
 分からない**。
+
+### 17 の手順（manifest に埋め込まれたアイコン）
+アイコンのファイルは 1 つも入っていない。manifest の `icons` に `data:` URI が
+2 つ書いてあるだけで、**先に並ぶ 512 は SVG**、オレンジの PNG は 192 で 2 番目。
+
+| 一覧のアイコン | 意味 |
+|---|---|
+| **オレンジの四角** | OK |
+| 頭文字タイル | data URI を復号していない。`IconStore.decodeDataUri` |
+| 赤い四角 | SVG の data URI をラスタライズできている（残作業 4 が済んでいれば正しい）|
+
+`<link rel="icon" href="data:...">` 側は別に用意していない。`HtmlHead` が
+data URI をそのまま返すことは Mac 上で確認済みで、その先は manifest 由来の候補と
+同じ経路（`isRasterisable` → `decodeCandidate`）を通るため。
 
 ### 13 の手順（操作の有無で変わる showDirectoryPicker）
 `12` は再接続に `pwaLibrary.files.folders()` を使うので、`showDirectoryPicker()`
