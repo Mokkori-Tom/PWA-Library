@@ -594,8 +594,9 @@ window.addEventListener('load', async function () {
   var list = await refreshGrants();
   var el = document.getElementById('load');
   if (!list.length) {
-    el.innerHTML = '<span class="warn">まだ許可済みフォルダが無いので、'
-      + '読み込み時の呼び出しは省略しました。先に 1 でフォルダを選んでください。</span>';
+    el.innerHTML = '<span class="warn">この起動では許可済みフォルダが無かったので、'
+      + '読み込み時の呼び出しは省略しました。1 で選んだあと、'
+      + '<b>閉じて開き直す</b>とここに再接続の結果が出ます。</span>';
     return;
   }
   el.textContent = '読み込み時に呼び出し中…';
