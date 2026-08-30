@@ -185,7 +185,7 @@ class WebAppActivity : ComponentActivity() {
 
         currentApp = app
         val loader = AppAssetRegistry.loaderFor(app.uuid, appDir)
-        val view = createWebView(loader)
+        val view = createWebView(app.uuid, loader)
         webView = view
 
         // Scoped to this one app: FileBridge filters every lookup by uuid, so a
@@ -227,7 +227,7 @@ class WebAppActivity : ComponentActivity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun createWebView(loader: androidx.webkit.WebViewAssetLoader): WebView {
+    private fun createWebView(uuid: String, loader: androidx.webkit.WebViewAssetLoader): WebView {
         val view = WebView(this)
 
         view.settings.apply {
@@ -255,7 +255,19 @@ class WebAppActivity : ComponentActivity() {
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
-            ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+            ): WebResourceResponse? {
+                val response = loader.shouldInterceptRequest(request.url)
+                // History fallback, the same deal a static host gives an SPA:
+                // /about is a client-side route, not a file, so a real reload
+                // there would otherwise return an empty 404. Restricted to
+                // main-frame navigation, so a missing script or image still
+                // fails as a missing script or image.
+                if (response != null && response.statusCode == 404 && request.isForMainFrame) {
+                    val root = Uri.parse(AppAssetRegistry.baseUrl(uuid))
+                    loader.shouldInterceptRequest(root)?.let { if (it.statusCode == 200) return it }
+                }
+                return response
+            }
 
             override fun shouldOverrideUrlLoading(
                 view: WebView,

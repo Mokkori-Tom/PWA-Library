@@ -26,8 +26,24 @@ object AppAssetRegistry {
 
     fun baseUrl(uuid: String): String = "https://${domainFor(uuid)}/"
 
-    fun urlFor(uuid: String, startUrl: String): String =
-        baseUrl(uuid) + startUrl.removePrefix("./").removePrefix("/")
+    /**
+     * Builds the URL a mini-app is launched at.
+     *
+     * A trailing `index.html` is dropped so the app opens at its directory URL.
+     * The path handler serves the same file either way, but an SPA router reads
+     * `location.pathname`: launched at `/index.html` a Vite/Next build matches no
+     * route and renders its 404, which is not how the same build behaves when a
+     * real static host serves it at `/`. Relative links resolve identically.
+     */
+    fun urlFor(uuid: String, startUrl: String): String {
+        val cleaned = startUrl.removePrefix("./").removePrefix("/")
+        val cut = cleaned.indexOfFirst { it == '?' || it == '#' }
+        val path = if (cut < 0) cleaned else cleaned.substring(0, cut)
+        val suffix = if (cut < 0) "" else cleaned.substring(cut)
+        val directory = if (path == "index.html") ""
+        else path.removeSuffix("/index.html").let { if (it == path) path else "$it/" }
+        return baseUrl(uuid) + directory + suffix
+    }
 
     fun loaderFor(uuid: String, appDir: File): WebViewAssetLoader {
         val domain = domainFor(uuid)
