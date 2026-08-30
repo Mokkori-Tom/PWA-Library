@@ -233,6 +233,25 @@ history フォールバックを一度に踏むので効率が良い。
 | 再読み込みで白画面 | `WebAppActivity.shouldInterceptRequest` の 404 フォールバック |
 | 画面が真っ白（初回から） | `LocalFilePathHandler.MIME_TYPES`、module script の配信 |
 
+### Next の静的出力
+`samples/real-next/`。Vite の SPA と違い**ルートごとに HTML が出る**（`/about` は
+`out/about.html`）。Service Worker も無いので、パスの解決は完全にこちら任せになる。
+
+1. `real-next-BUILD1.zip` を取り込む → 名前が「実 PWA テスト (Next 静的出力)」
+2. 起動 → 現在のパスが `/`、ホームが描画される
+3. 「About」「遅延チャンク」→ クライアント遷移で表示される（`.txt` の RSC
+   ペイロードを取りに行くので、MIME が合っていないとここで止まる）
+4. **`/about` で「このパスで再読み込み」** → ここが本番。実ファイルは
+   `about.html` なので、`/about` を要求しても当たらない
+5. カウントを増やして `real-next-BUILD2.zip` を取り込む → `BUILD-2` に変わり、
+   カウントは残る
+
+| 外れたら | 見る場所 |
+|---|---|
+| 4 でホームが出る / 404 ページになる | `WebAppActivity` のフォールバックが `index.html` を返している。`.html` を試す必要がある |
+| 3 で遷移しない | `LocalFilePathHandler.MIME_TYPES` の `txt` |
+| アイコンが頭文字タイル | `manifest.webmanifest` を拾えていない |
+
 ### fieldform（他人が書いた実アプリ）
 ビルド不要の素の静的サイト。オフライン前提のフォーム作成・データ収集ツールで、
 **CSP で `connect-src 'none'`**、Service Worker なし、`start_url` と `scope` が

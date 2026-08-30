@@ -1,0 +1,6 @@
+body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f6f8fa; color: #24292f; }
+main { max-width: 720px; margin: 0 auto; }
+nav { margin: 12px 0; }
+button { font: inherit; padding: 6px 12px; }
+code { background: #eaeef2; padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+.ok { color: #1a7f37; font-weight: bold; }
