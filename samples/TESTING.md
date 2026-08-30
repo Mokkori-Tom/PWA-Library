@@ -179,8 +179,9 @@ revoke** し、ページの CSP は `connect-src 'none'`。
    ファイルマネージャで中身が 3 行あること
 3. **「2 MB を書き出す」** → 保存したファイルが **2,097,152 バイト**。分割して
    渡しているので、途中で切れていればサイズでわかる
-4. **「data URL で書き出す」** → `from-data-url.txt` が保存される。
-   このクリックは DownloadListener に届かないので、シムがページ内で拾っている
+4. **「data URL で書き出す」**（base64）と **「data URL（base64 以外）」**
+   （パーセントエンコード）→ `from-data-url.txt` と `percent-encoded.txt`。
+   どちらもシムがクリックを捕まえて Blob に変換している
 5. **「アプリ内のファイルを保存」** → `notes.txt` が保存される
 6. 保存先を選ぶ画面で**戻る**→「保存を取り消しました」。ファイルは残らない
 7. 「アクティビティを保持しない」を ON にして 2 をやり直す →
@@ -191,7 +192,7 @@ revoke** し、ページの CSP は `connect-src 'none'`。
 | 「データが見つかりません」 | revoke が先に効いている。`DownloadShim` の保持期間 |
 | ファイル名が `downloadfile.bin` | `<a download>` の値を拾えていない。`DownloadShim` の click ハンドラ |
 | 2 MB が途中で切れる | `DownloadBridge.chunk` |
-| 何も起きない | `setDownloadListener` に届いていない |
+| 何も起きない | まずページ側の例外を疑う（`window.onerror` が拾って画面に出す）。それが無ければ `setDownloadListener` に届いていない |
 
 ---
 

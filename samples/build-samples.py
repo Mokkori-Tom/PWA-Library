@@ -632,7 +632,10 @@ blob URL を <code>&lt;a download&gt;</code> に渡し、1.5 秒後に revoke �
 <p><button id="csv">CSV を書き出す</button>
    <button id="big">2 MB を書き出す</button>
    <button id="data">data URL で書き出す</button></p>
-<p><a id="own" href="data/notes.txt" download="notes.txt">アプリ内のファイルを保存</a></p>
+<p><a id="own" href="data/notes.txt" download="notes.txt">アプリ内のファイルを保存</a>
+   ・
+   <a id="pct" href="data:text/plain;charset=utf-8,%E3%83%91%E3%83%BC%E3%82%BB%E3%83%B3%E3%83%88%E3%82%A8%E3%83%B3%E3%82%B3%E3%83%BC%E3%83%89%0A"
+      download="percent-encoded.txt">data URL（base64 以外）</a></p>
 <p id="out"></p>
 
 <p class="note">
@@ -647,6 +650,12 @@ var out = document.getElementById('out');
 function show(msg, ok) {
   out.innerHTML = "<span class='" + (ok ? 'ok' : 'ng') + "'>" + msg + "</span>";
 }
+
+// Without this a throwing handler looks exactly like a dead button, which is
+// how btoa() refusing non-Latin-1 text got read as a bug in the container.
+window.addEventListener('error', function (e) {
+  show('ページ側で例外: ' + (e.message || e.type), false);
+});
 
 // The page's own CSP is the reason the shim reads blobs with FileReader
 // instead of fetching them. Reported here so a failure is not mistaken for a
@@ -687,8 +696,13 @@ document.getElementById('big').onclick = function () {
 };
 
 document.getElementById('data').onclick = function () {
+  // btoa() takes Latin-1 only, so encode to UTF-8 bytes first. Passing
+  // Japanese straight in throws, and then the click never happens at all.
+  var bytes = new TextEncoder().encode('data URL からの保存\n');
+  var binary = '';
+  for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   var a = document.createElement('a');
-  a.href = 'data:text/plain;base64,' + btoa('data URL からの保存');
+  a.href = 'data:text/plain;base64,' + btoa(binary);
   a.download = 'from-data-url.txt';
   document.body.appendChild(a);
   a.click();
