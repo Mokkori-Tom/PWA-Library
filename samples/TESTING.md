@@ -203,8 +203,8 @@ MIT。リポジトリには取り込まず、必要なときに上で作る。
 | 取り込み・起動 | 名前が「fieldform」、アイコンが画像。`start_url: "."` でも起動する |
 | フォームを作る（フィールド追加・並べ替え・必須） | 動く |
 | Collect で保存 → 件数が増える | 動く。閉じて開き直しても残る（localStorage） |
-| **CSV / JSON エクスポート** | **現状は「ダウンロードできません」で失敗するはず**。`<a download>` + blob URL を `setDownloadListener` が断っている |
+| **CSV / JSON エクスポート** | **現状は失敗する**（確認済み）。`<a download>` + blob URL を `setDownloadListener` が断っている。**fieldform 側は「Exported 2 rows to CSV」と成功表示を出す**ので、画面だけ見ていると気づけない |
 | Export form → Import form | 出力ができないので、往復は現状確認できない |
 
-エクスポートは fieldform の主機能なので、これが実アプリでのダウンロード対応
-（SAF で保存する）の優先度を決める材料になる。
+エクスポートは fieldform の主機能なので、ダウンロード対応（SAF で保存する）を
+入れたらここが最初の検証対象になる。
