@@ -184,3 +184,27 @@ history フォールバックを一度に踏むので効率が良い。
 | 起動直後に 404 | `AppAssetRegistry.urlFor` |
 | 再読み込みで白画面 | `WebAppActivity.shouldInterceptRequest` の 404 フォールバック |
 | 画面が真っ白（初回から） | `LocalFilePathHandler.MIME_TYPES`、module script の配信 |
+
+### fieldform（他人が書いた実アプリ）
+ビルド不要の素の静的サイト。オフライン前提のフォーム作成・データ収集ツールで、
+**CSP で `connect-src 'none'`**、Service Worker なし、`start_url` と `scope` が
+`"."`、`manifest.webmanifest`、アイコンは `purpose: "any maskable"`。
+こちらが書いていないコードなので、思い込みの入っていない検体になる。
+
+```
+git clone --depth 1 https://github.com/Sreenivas-Sadhu-Prabhakara/fieldform /tmp/fieldform
+(cd /tmp/fieldform && zip -qr ~/Downloads/fieldform.zip . -x '.git/*')
+```
+
+MIT。リポジトリには取り込まず、必要なときに上で作る。
+
+| 操作 | 期待 |
+|---|---|
+| 取り込み・起動 | 名前が「fieldform」、アイコンが画像。`start_url: "."` でも起動する |
+| フォームを作る（フィールド追加・並べ替え・必須） | 動く |
+| Collect で保存 → 件数が増える | 動く。閉じて開き直しても残る（localStorage） |
+| **CSV / JSON エクスポート** | **現状は「ダウンロードできません」で失敗するはず**。`<a download>` + blob URL を `setDownloadListener` が断っている |
+| Export form → Import form | 出力ができないので、往復は現状確認できない |
+
+エクスポートは fieldform の主機能なので、これが実アプリでのダウンロード対応
+（SAF で保存する）の優先度を決める材料になる。

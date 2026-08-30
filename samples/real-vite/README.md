@@ -26,3 +26,6 @@ VITE_BUILD_ID=BUILD-2 npm run build && (cd dist && zip -qr ../../dist/real-vite-
 
 2 つは同じ manifest id (`real.vite.spa`) でビルド番号だけが違うので、
 そのまま更新テストになる。手順と期待値は `samples/TESTING.md`。
+
+`build-samples.py` は最初に `samples/dist/` を消すので、後から走らせるとここの
+zip も消える。その場合は上のコマンドをもう一度実行する。
