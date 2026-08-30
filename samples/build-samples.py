@@ -482,6 +482,137 @@ window.addEventListener('load', async function () {
     })
 
 
+@case
+def picker_modes():
+    """Separates the two meanings of showDirectoryPicker().
+
+    12-folder-write reconnects through pwaLibrary.files.folders(), so it never
+    exercises the no-gesture branch of the picker itself. This one calls the
+    standard function in both states and reports which one it got, without
+    needing DevTools: transient activation expires on its own after a few
+    seconds, so a delayed call is a gesture-free call.
+    """
+    body = r"""
+<p>同じ <code>showDirectoryPicker()</code> が、ユーザー操作の有無で意味を変える。
+<b>操作あり = 選び直したい</b>ので選択画面を出し、<b>操作なし = 前回の続き</b>なので
+許可済みのフォルダを黙って返す。</p>
+
+<p>診断: <code id="diag">-</code></p>
+<p>許可済み: <code id="grants">-</code></p>
+<p id="load" class="note">-</p>
+
+<p><button id="gesture">1. ユーザー操作で呼ぶ</button>
+   <button id="delayed">2. 8 秒後に呼ぶ</button></p>
+<p id="out"></p>
+<pre id="log" style="background:#fff;border:1px solid #e3e8ee;border-radius:8px;
+     padding:10px;white-space:pre-wrap;font-size:12px"></pre>
+
+<p class="note">
+1 は<b>選択画面が出る</b>のが正解。2 は<b>出ずに</b>フォルダ名が返るのが正解。
+2 を押したあとは <b>8 秒間画面に触らないこと</b>。触ると操作が新しくなり、
+1 と同じ扱いになる。
+</p>
+
+<script>
+var out = document.getElementById('out');
+var log = document.getElementById('log');
+var ua = navigator.userActivation;
+
+document.getElementById('diag').textContent =
+  'bridge=' + (window.__pwalibFs ? 'あり' : 'なし') +
+  ' / shim=' + (window.pwaLibrary && window.pwaLibrary.files ? 'あり' : 'なし') +
+  ' / userActivation=' + (ua ? 'あり' : 'なし');
+
+function show(msg, ok) {
+  out.innerHTML = "<span class='" + (ok ? 'ok' : 'ng') + "'>" + msg + "</span>";
+}
+
+function note(line) {
+  log.textContent += line + '\n';
+}
+
+async function grants() {
+  if (!window.pwaLibrary || !window.pwaLibrary.files) return [];
+  try { return await window.pwaLibrary.files.folders(); } catch (e) { return []; }
+}
+
+async function refreshGrants() {
+  var list = await grants();
+  document.getElementById('grants').textContent =
+    list.length ? list.map(function (h) { return h.name; }).join(', ') : 'なし';
+  return list;
+}
+
+// Records what the picker did, alongside the activation state it was called in,
+// so a wrong answer says which branch ran rather than just failing.
+async function callPicker(label) {
+  var active = ua ? ua.isActive : '(不明)';
+  note(label + ': isActive=' + active + ' で呼び出し');
+  try {
+    var h = await window.showDirectoryPicker();
+    note('  → ' + h.name);
+    return h;
+  } catch (e) {
+    note('  → 失敗 ' + e.name + ' — ' + e.message);
+    return null;
+  }
+}
+
+document.getElementById('gesture').onclick = async function () {
+  show('選択画面が出れば OK', true);
+  var h = await callPicker('操作あり');
+  await refreshGrants();
+  if (h) show('選択画面から ' + h.name + ' を選びました', true);
+};
+
+document.getElementById('delayed').onclick = function () {
+  var left = 8;
+  var btn = this;
+  btn.disabled = true;
+  show('あと ' + left + ' 秒。画面に触らないでください', true);
+  var t = setInterval(async function () {
+    left -= 1;
+    if (left > 0) { show('あと ' + left + ' 秒。画面に触らないでください', true); return; }
+    clearInterval(t);
+    btn.disabled = false;
+    var before = ua ? ua.isActive : null;
+    var h = await callPicker('操作なし（8 秒後）');
+    if (before === true) {
+      show('触ってしまったので判定できません。もう一度', false);
+    } else if (h) {
+      show('選択画面を出さずに ' + h.name + ' が返れば OK', true);
+    } else {
+      show('拒否されました。許可済みフォルダが無いのかもしれません', false);
+    }
+  }, 1000);
+};
+
+// A page-load call is the reconnect case, but only when something has been
+// granted: with no grant the shim falls through and prompts, and a picker
+// appearing by itself on load would just be confusing.
+window.addEventListener('load', async function () {
+  var list = await refreshGrants();
+  var el = document.getElementById('load');
+  if (!list.length) {
+    el.innerHTML = '<span class="warn">まだ許可済みフォルダが無いので、'
+      + '読み込み時の呼び出しは省略しました。先に 1 でフォルダを選んでください。</span>';
+    return;
+  }
+  el.textContent = '読み込み時に呼び出し中…';
+  var h = await callPicker('読み込み時');
+  el.innerHTML = h
+    ? '<span class="ok">読み込み時: 選択画面なしで ' + h.name + ' に再接続</span>'
+    : '<span class="ng">読み込み時: 再接続できませんでした</span>';
+});
+</script>
+"""
+    write("13-picker-modes.zip", {
+        "index.html": page("ピッカーの 2 つの意味", body),
+        "manifest.json": manifest(id="test.pickermodes", name="13 ピッカーの意味",
+                                  start_url="index.html", display="standalone"),
+    })
+
+
 # --------------------------------------------------------------- negative cases
 
 @case
