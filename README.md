@@ -78,6 +78,7 @@ python3 samples/build-samples.py
 - 削除、同一 manifest id での更新 (更新時に古い Service Worker キャッシュを破棄)
 - zip の保存 (SAF) と共有 (FileProvider)。取り込んだ zip をそのまま渡すので、
   受け取った相手のファイルと 1 バイトも変わらない
+- ダウンロードの保存 (blob / data URL / アプリ内ファイル)。SAF で保存先を選ぶ
 - File System Access API の模倣 (`showDirectoryPicker` / `getFileHandle` /
   `createWritable` / ディレクトリ列挙)。SAF が裏打ち
 
@@ -98,4 +99,6 @@ python3 samples/build-samples.py
   `Android/obb` に加えて **Download も選べない**（「プライバシーを保護するため、
   別のフォルダを選択してください」と出る）。Documents や DCIM、任意の
   サブフォルダは選べる
-- ダウンロード (`<a download>`, blob) は現状トーストで断っている
+- ダウンロードは `ACTION_CREATE_DOCUMENT` で保存先を選ばせる。blob はページの
+  CSP が `fetch` を禁じていても読めるよう、`URL.createObjectURL` を包んで Blob を
+  保持し FileReader で読む。ただし成否をページに返す方法はない

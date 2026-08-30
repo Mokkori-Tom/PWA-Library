@@ -614,6 +614,100 @@ window.addEventListener('load', async function () {
     })
 
 
+@case
+def downloads():
+    """Saving what a page exports.
+
+    Shaped after fieldform, which is what exposed the gap: a Blob handed to
+    <a download>, revoked a second and a half later, in a page whose CSP
+    forbids fetch(). Reading the blob back over the network is the obvious
+    implementation and the one that cannot work here.
+    """
+    body = r"""
+<p>ページが書き出したファイルを保存できるか。<b>fieldform と同じ形</b>で、
+blob URL を <code>&lt;a download&gt;</code> に渡し、1.5 秒後に revoke する。</p>
+
+<p>診断: <code id="diag">-</code></p>
+
+<p><button id="csv">CSV を書き出す</button>
+   <button id="big">2 MB を書き出す</button>
+   <button id="data">data URL で書き出す</button></p>
+<p><a id="own" href="data/notes.txt" download="notes.txt">アプリ内のファイルを保存</a></p>
+<p id="out"></p>
+
+<p class="note">
+どれも<b>保存先を選ぶ画面</b>が出て、選んだ場所にファイルができるのが正解。
+中身はファイルマネージャで確認する。2 MB のものは分割して渡しているので、
+途中で切れていないかサイズで見る（<b>2,097,152 バイト</b>）。
+</p>
+
+<script>
+var out = document.getElementById('out');
+
+function show(msg, ok) {
+  out.innerHTML = "<span class='" + (ok ? 'ok' : 'ng') + "'>" + msg + "</span>";
+}
+
+// The page's own CSP is the reason the shim reads blobs with FileReader
+// instead of fetching them. Reported here so a failure is not mistaken for a
+// broken bridge.
+(function () {
+  var url = URL.createObjectURL(new Blob(['x']));
+  var line = 'blob URL への fetch: ';
+  fetch(url).then(function () {
+    document.getElementById('diag').textContent = line + '通る';
+  }).catch(function (e) {
+    document.getElementById('diag').textContent = line + '遮断 (' + e.name + ')';
+  }).then(function () { URL.revokeObjectURL(url); });
+})();
+
+// Deliberately the same as fieldform's helper, revoke delay included.
+function download(filename, text, mime) {
+  var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  show(filename + ' を書き出しました。保存先を選ぶ画面が出れば OK', true);
+}
+
+document.getElementById('csv').onclick = function () {
+  download('sample.csv', '番号,名前\n1,テスト\n2,ダウンロード\n', 'text/csv');
+};
+
+document.getElementById('big').onclick = function () {
+  var block = new Array(1025).join('x');
+  var parts = [];
+  for (var i = 0; i < 2048; i++) parts.push(block);
+  download('big.txt', parts.join(''), 'text/plain');
+};
+
+document.getElementById('data').onclick = function () {
+  var a = document.createElement('a');
+  a.href = 'data:text/plain;base64,' + btoa('data URL からの保存');
+  a.download = 'from-data-url.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  show('data URL で書き出しました', true);
+};
+</script>
+"""
+    head = ('<meta http-equiv="Content-Security-Policy" '
+            'content="default-src \'self\'; script-src \'self\' \'unsafe-inline\'; '
+            'connect-src \'none\'">')
+    write("14-download.zip", {
+        "index.html": page("ダウンロード", body, head=head),
+        "data/notes.txt": "アプリ内のファイルをそのまま保存できるかの確認用。\n",
+        "manifest.json": manifest(id="test.download", name="14 ダウンロード",
+                                  start_url="index.html", display="standalone"),
+    })
+
+
 # --------------------------------------------------------------- negative cases
 
 @case

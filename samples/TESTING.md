@@ -71,6 +71,7 @@ python3 samples/build-samples.py
 | `11a` / `11b` / `11c` | 生成された manifest の相対 id | 下記参照 |
 | `12-folder-write` | フォルダへの継続書き込み | 下記参照 | `WebAppActivity.RESET_SCRIPT` |
 | `13-picker-modes` | ピッカーの 2 つの意味 | 下記参照 | `FileSystemShim.hasActivation` |
+| `14-download` | 書き出したファイルの保存 | 下記参照 | `DownloadShim` / `DownloadBridge` |
 
 ### 08 の手順（app shell 型 SW での更新）
 編集は不要。2 つの zip を順に取り込むだけ。
@@ -167,6 +168,29 @@ transient activation は数秒で切れるので、遅らせて呼べば操作�
 | 2 が「触ってしまったので判定できません」 | カウントダウン中に画面に触れた。やり直す |
 | 4 で再接続できない | `FileBridge.listGrants` |
 | 1 で選択画面が出ない | 許可済みフォルダを黙って返している。`FileSystemShim.pick` の `force` 分岐 |
+
+### 14 の手順（ダウンロード）
+fieldform と同じ形にしてある。blob URL を `<a download>` に渡し、**1.5 秒後に
+revoke** し、ページの CSP は `connect-src 'none'`。
+
+1. 診断行に **「blob URL への fetch: 遮断」** と出る。これが出るのが正常で、
+   blob を `fetch` で読み直す実装が使えない理由そのもの
+2. **「CSV を書き出す」** → 保存先を選ぶ画面 → 選ぶ → 「sample.csv を保存しました」。
+   ファイルマネージャで中身が 3 行あること
+3. **「2 MB を書き出す」** → 保存したファイルが **2,097,152 バイト**。分割して
+   渡しているので、途中で切れていればサイズでわかる
+4. **「data URL で書き出す」** → `from-data-url.txt` が保存される
+5. **「アプリ内のファイルを保存」** → `notes.txt` が保存される
+6. 保存先を選ぶ画面で**戻る**→「保存を取り消しました」。ファイルは残らない
+7. 「アクティビティを保持しない」を ON にして 2 をやり直す →
+   回収されても保存できる（staging はキャッシュに置いてあるので生き残る）
+
+| 外れたら | 見る場所 |
+|---|---|
+| 「データが見つかりません」 | revoke が先に効いている。`DownloadShim` の保持期間 |
+| ファイル名が `downloadfile.bin` | `<a download>` の値を拾えていない。`DownloadShim` の click ハンドラ |
+| 2 MB が途中で切れる | `DownloadBridge.chunk` |
+| 何も起きない | `setDownloadListener` に届いていない |
 
 ---
 

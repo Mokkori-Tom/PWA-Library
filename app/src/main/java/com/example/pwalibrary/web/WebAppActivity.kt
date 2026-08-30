@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
+import android.util.Base64
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -17,6 +18,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.URLUtil
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -35,8 +37,12 @@ import androidx.webkit.WebViewFeature
 import com.example.pwalibrary.data.AppDatabase
 import com.example.pwalibrary.data.AppEntity
 import com.example.pwalibrary.data.FolderGrant
+import com.example.pwalibrary.files.DownloadBridge
 import com.example.pwalibrary.files.FileBridge
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -50,6 +56,10 @@ class WebAppActivity : ComponentActivity() {
     companion object {
         const val EXTRA_UUID = "app_uuid"
         private const val STATE_DIRECTORY_REQUEST = "pending_directory_request"
+        private const val STATE_SAVE_PATH = "pending_save_path"
+        private const val STATE_SAVE_NAME = "pending_save_name"
+        private const val STATE_SAVE_MIME = "pending_save_mime"
+        private const val STATE_SAVE_TEMP = "pending_save_temp"
 
         private var serviceWorkerConfigured = false
 
@@ -141,6 +151,19 @@ class WebAppActivity : ComponentActivity() {
     /** Set while a mini-app's showDirectoryPicker() call is waiting on SAF. */
     private var pendingDirectoryRequest: String? = null
 
+    private lateinit var documentCreator: ActivityResultLauncher<String>
+    /** A finished download waiting for the user to say where it goes. */
+    private var pendingSave: PendingSave? = null
+    private var downloadSeq = 0
+
+    private data class PendingSave(
+        val file: File,
+        val fileName: String,
+        val mime: String,
+        /** False when the bytes are the mini-app's own file rather than a copy. */
+        val deleteAfter: Boolean
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -151,6 +174,10 @@ class WebAppActivity : ComponentActivity() {
             onFolderPicked(uri)
         }
 
+        documentCreator = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+            onSaveTargetPicked(uri)
+        }
+
         fileChooser = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             // Must always answer, even on cancel, or the file input stays stuck.
             filePathCallback?.onReceiveValue(uris.takeIf { it.isNotEmpty() }?.toTypedArray())
@@ -158,6 +185,16 @@ class WebAppActivity : ComponentActivity() {
         }
 
         pendingDirectoryRequest = savedInstanceState?.getString(STATE_DIRECTORY_REQUEST)
+        // The staged file is in the cache directory, so it outlives the
+        // activity that the save dialog displaced.
+        savedInstanceState?.getString(STATE_SAVE_PATH)?.let { path ->
+            pendingSave = PendingSave(
+                File(path),
+                savedInstanceState.getString(STATE_SAVE_NAME) ?: "download",
+                savedInstanceState.getString(STATE_SAVE_MIME) ?: "application/octet-stream",
+                savedInstanceState.getBoolean(STATE_SAVE_TEMP, true)
+            )
+        }
 
         val uuid = intent.getStringExtra(EXTRA_UUID) ?: intent.data?.lastPathSegment
         appUuid = uuid
@@ -195,6 +232,16 @@ class WebAppActivity : ComponentActivity() {
                 runOnUiThread { startFolderPick(requestId) }
             },
             "__pwalibFs"
+        )
+        view.addJavascriptInterface(
+            DownloadBridge(
+                stagingDir(),
+                onReady = { _, file, fileName, mime ->
+                    runOnUiThread { askWhereToSave(file, fileName, mime, deleteAfter = true) }
+                },
+                onFail = { _, message -> runOnUiThread { toast(message) } }
+            ),
+            "__pwalibDl"
         )
         container.addView(
             view,
@@ -369,8 +416,8 @@ class WebAppActivity : ComponentActivity() {
             }
         }
 
-        view.setDownloadListener { _, _, _, _, _ ->
-            Toast.makeText(this, "このアプリではダウンロードできません", Toast.LENGTH_SHORT).show()
+        view.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            startDownload(url, contentDisposition, mimeType)
         }
 
         return view
@@ -382,6 +429,125 @@ class WebAppActivity : ComponentActivity() {
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(this, "リンクを開けませんでした", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ----------------------------------------------------------- downloads
+
+    /**
+     * Answers a download the way a browser does: collect the bytes, then ask
+     * where they go.
+     *
+     * Refusing was worse than it looked. By the time this runs the page's work
+     * is over — fieldform reports "Exported 2 rows to CSV" with no file
+     * anywhere — so the mini-app cannot tell the user that anything failed.
+     */
+    private fun startDownload(url: String, contentDisposition: String?, mimeType: String?) {
+        when {
+            // Only the page can read its own blob, so it does the reading.
+            url.startsWith("blob:") -> {
+                val id = "d" + (++downloadSeq)
+                webView?.evaluateJavascript(
+                    "window.__pwalibReadBlob(" +
+                        JSONObject.quote(url) + "," + JSONObject.quote(id) + ")",
+                    null
+                )
+            }
+            url.startsWith("data:") -> stageDataUrl(url, mimeType)
+            else -> stageAppFile(url, contentDisposition, mimeType)
+        }
+    }
+
+    private fun stageDataUrl(url: String, mimeType: String?) {
+        val comma = url.indexOf(',')
+        if (comma < 0) return toast("保存できませんでした")
+
+        val header = url.substring("data:".length, comma)
+        val payload = url.substring(comma + 1)
+        val bytes = runCatching {
+            if (header.contains(";base64")) Base64.decode(payload, Base64.DEFAULT)
+            else Uri.decode(payload).toByteArray()
+        }.getOrNull() ?: return toast("保存できませんでした")
+
+        val mime = mimeType?.takeIf { it.isNotBlank() }
+            ?: header.substringBefore(';').ifBlank { "application/octet-stream" }
+
+        askDownloadName(url) { suggested ->
+            val staged = File(stagingDir().apply { mkdirs() }, "dl-data")
+            runCatching { staged.writeBytes(bytes) }
+                .onSuccess { askWhereToSave(staged, suggested, mime, deleteAfter = true) }
+                .onFailure { toast("保存できませんでした") }
+        }
+    }
+
+    /** A link to one of the mini-app's own files; no copy needed to save it. */
+    private fun stageAppFile(url: String, contentDisposition: String?, mimeType: String?) {
+        val root = currentApp?.appDirPath?.let { File(it) } ?: return toast("保存できませんでした")
+        val path = runCatching { Uri.parse(url).path }.getOrNull()?.removePrefix("/")
+        if (path.isNullOrBlank()) return toast("保存できませんでした")
+
+        val file = File(root, Uri.decode(path))
+        val inside = runCatching {
+            file.canonicalPath.startsWith(root.canonicalPath + File.separator)
+        }.getOrDefault(false)
+        if (!inside || !file.isFile) return toast("保存できませんでした")
+
+        askWhereToSave(
+            file,
+            URLUtil.guessFileName(url, contentDisposition, mimeType),
+            mimeType ?: "application/octet-stream",
+            deleteAfter = false
+        )
+    }
+
+    /** The `<a download>` value, which DownloadListener never carries. */
+    private fun askDownloadName(url: String, then: (String) -> Unit) {
+        val view = webView ?: return then("")
+        view.evaluateJavascript("window.__pwalibDownloadName(" + JSONObject.quote(url) + ")") { raw ->
+            then(runCatching { JSONArray("[" + raw + "]").optString(0) }.getOrDefault(""))
+        }
+    }
+
+    private fun askWhereToSave(file: File, fileName: String, mime: String, deleteAfter: Boolean) {
+        val save = PendingSave(file, safeFileName(fileName), mime, deleteAfter)
+        pendingSave = save
+        runCatching { documentCreator.launch(save.fileName) }.onFailure {
+            pendingSave = null
+            if (deleteAfter) file.delete()
+            toast("保存先を選べません")
+        }
+    }
+
+    private fun onSaveTargetPicked(uri: Uri?) {
+        val save = pendingSave ?: return
+        pendingSave = null
+
+        if (uri == null) {
+            if (save.deleteAfter) save.file.delete()
+            toast("保存を取り消しました")
+            return
+        }
+
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val stream = contentResolver.openOutputStream(uri)
+                        ?: error("保存先を開けませんでした")
+                    stream.use { out -> save.file.inputStream().use { it.copyTo(out) } }
+                }.isSuccess
+            }
+            if (save.deleteAfter) save.file.delete()
+            toast(if (saved) save.fileName + " を保存しました" else "保存できませんでした")
+        }
+    }
+
+    /** A page picks this name, so it must not be able to aim it at a path. */
+    private fun safeFileName(name: String): String =
+        name.substringAfterLast('/').substringAfterLast('\\').trim().ifBlank { "download" }
+
+    private fun stagingDir(): File = File(cacheDir, "downloads")
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     // ------------------------------------------------------- folder access
@@ -534,6 +700,12 @@ class WebAppActivity : ComponentActivity() {
         // The picker is another app's activity; this one can be recycled while
         // it is on screen.
         outState.putString(STATE_DIRECTORY_REQUEST, pendingDirectoryRequest)
+        pendingSave?.let {
+            outState.putString(STATE_SAVE_PATH, it.file.absolutePath)
+            outState.putString(STATE_SAVE_NAME, it.fileName)
+            outState.putString(STATE_SAVE_MIME, it.mime)
+            outState.putBoolean(STATE_SAVE_TEMP, it.deleteAfter)
+        }
     }
 
     override fun onPause() {

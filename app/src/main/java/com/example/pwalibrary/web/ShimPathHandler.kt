@@ -2,11 +2,15 @@ package com.example.pwalibrary.web
 
 import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
+import com.example.pwalibrary.files.DownloadShim
 import com.example.pwalibrary.files.FileSystemShim
 import java.io.ByteArrayInputStream
 
 /**
- * Serves the File System Access shim under a reserved path.
+ * Serves the injected shims under a reserved path.
+ *
+ * Both of them ride in this one file: the page gets a single script tag, and
+ * the byte budget for the injection stays where it is.
  *
  * Inlining it into the page instead would push the page's own `<meta charset>`
  * past the first 1024 bytes, where the HTML parser stops looking for it, and
@@ -29,7 +33,7 @@ class ShimPathHandler : WebViewAssetLoader.PathHandler {
                 "Pragma" to "no-cache",
                 "Expires" to "0"
             ),
-            ByteArrayInputStream(FileSystemShim.JS.toByteArray(Charsets.UTF_8))
+            ByteArrayInputStream((FileSystemShim.JS + DownloadShim.JS).toByteArray(Charsets.UTF_8))
         )
     }
 
