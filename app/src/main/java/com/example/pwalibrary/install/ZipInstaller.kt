@@ -3,6 +3,7 @@ package com.example.pwalibrary.install
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -21,6 +22,8 @@ class StagedZip(
     /** "" for a flat zip, "myapp/" when the zip contains a wrapping folder. */
     val rootPrefix: String,
     val manifest: WebManifest?,
+    /** What the root index.html says about itself. Carries the load when there is no manifest. */
+    val html: HtmlHead,
     val fallbackName: String,
     val totalBytes: Long,
     /** Identity of last resort for zips that carry no manifest. */
@@ -40,6 +43,13 @@ class ZipInstaller(private val context: Context) {
         private const val MAX_ENTRY_BYTES = 128L * 1024 * 1024
         private const val MAX_ZIP_BYTES = 256L * 1024 * 1024
         private const val COPY_BUFFER = 64 * 1024
+
+        /**
+         * How much of index.html is read looking for its head. Generous next to
+         * any real head, and bounded because a single-file app can inline
+         * megabytes of base64 into the very same document.
+         */
+        private const val MAX_HEAD_BYTES = 256 * 1024
     }
 
     // ---------------------------------------------------------------- staging
@@ -49,11 +59,16 @@ class ZipInstaller(private val context: Context) {
         try {
             val sha256 = copyUriToFile(uri, temp)
             val (prefix, totalBytes) = inspect(temp)
-            val manifest = readManifest(temp, prefix)
+            // One open for both: the manifest and the page are read from the
+            // same central directory.
+            val (manifest, html) = openZip(temp).use { zf ->
+                readManifest(zf, prefix) to readHtmlHead(zf, prefix)
+            }
             return StagedZip(
                 tempZip = temp,
                 rootPrefix = prefix,
                 manifest = manifest,
+                html = html,
                 fallbackName = displayName(uri).removeSuffix(".zip").ifBlank { "アプリ" },
                 totalBytes = totalBytes,
                 sha256 = sha256
@@ -172,15 +187,45 @@ class ZipInstaller(private val context: Context) {
         throw InstallException("zip を開けませんでした。壊れている可能性があります。")
     }
 
-    private fun readManifest(zip: File, prefix: String): WebManifest? =
-        openZip(zip).use { zf ->
-            val entry = zf.getEntry("${prefix}manifest.json")
-                ?: zf.getEntry("${prefix}manifest.webmanifest")
-                ?: return@use null
-            if (entry.size > 1024 * 1024) return@use null
-            val text = zf.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
-            WebManifest.parse(text)
+    private fun readManifest(zf: ZipFile, prefix: String): WebManifest? {
+        val entry = zf.getEntry("${prefix}manifest.json")
+            ?: zf.getEntry("${prefix}manifest.webmanifest")
+            ?: return null
+        if (entry.size > 1024 * 1024) return null
+        val text = zf.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+        return WebManifest.parse(text)
+    }
+
+    /**
+     * Reads the root index.html's head for a name and icons.
+     *
+     * This is the entry [inspect] derived the root prefix from, so it exists.
+     * A manifest start_url pointing at some other page is not followed: when
+     * there is a manifest it already answers both questions, and when there is
+     * not, index.html is where the app starts.
+     */
+    private fun readHtmlHead(zf: ZipFile, prefix: String): HtmlHead {
+        val entry = zf.getEntry("${prefix}index.html") ?: return HtmlHead.EMPTY
+        return try {
+            HtmlHead.parse(zf.getInputStream(entry).use { readAtMost(it, MAX_HEAD_BYTES) })
+        } catch (e: Exception) {
+            // Nothing here is worth failing an otherwise valid import over.
+            HtmlHead.EMPTY
         }
+    }
+
+    private fun readAtMost(input: InputStream, limit: Int): ByteArray {
+        val out = ByteArrayOutputStream(minOf(limit, COPY_BUFFER))
+        val buf = ByteArray(COPY_BUFFER)
+        var total = 0
+        while (total < limit) {
+            val n = input.read(buf, 0, minOf(buf.size, limit - total))
+            if (n < 0) break
+            out.write(buf, 0, n)
+            total += n
+        }
+        return out.toByteArray()
+    }
 
     // ------------------------------------------------------------- extraction
 

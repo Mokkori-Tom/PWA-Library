@@ -21,6 +21,12 @@ object IconStore {
     private const val ADAPTIVE_PX = 288
     private const val ADAPTIVE_SAFE_FRACTION = 0.66f
 
+    /** Bounds the decode attempts a hostile or merely sloppy manifest can demand. */
+    private const val MAX_CANDIDATES = 24
+
+    /** BitmapFactory decodes neither SVG nor ICO, so those are skipped, not attempted. */
+    private val RASTER_EXTENSIONS = setOf("png", "webp", "jpg", "jpeg")
+
     private val FALLBACK_PATHS = listOf(
         "icon.png",
         "icon.webp",
@@ -35,15 +41,27 @@ object IconStore {
      * Picks the best icon out of the extracted app and writes a normalised PNG.
      * Returns null when the app ships nothing usable, in which case callers fall
      * back to [letterBitmap].
+     *
+     * Candidates are tried until one decodes rather than committing to the first
+     * one that exists: a file being present says nothing about BitmapFactory
+     * being able to read it, and giving up there would discard a perfectly good
+     * icon sitting behind a truncated or mislabelled one.
      */
-    fun extract(context: Context, uuid: String, appDir: File, manifest: WebManifest?): File? {
-        val source = candidatePaths(manifest)
+    fun extract(
+        context: Context,
+        uuid: String,
+        appDir: File,
+        manifest: WebManifest?,
+        htmlIcons: List<String>
+    ): File? {
+        val bitmap = candidatePaths(manifest, htmlIcons)
             .asSequence()
             .mapNotNull { resolveInside(appDir, it) }
-            .firstOrNull { it.isFile }
+            .filter { it.isFile }
+            .mapNotNull { decodeScaled(it, ICON_PX) }
+            .firstOrNull()
             ?: return null
 
-        val bitmap = decodeScaled(source, ICON_PX) ?: return null
         val dest = Storage.iconFile(context, uuid)
         return try {
             dest.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -56,16 +74,27 @@ object IconStore {
         }
     }
 
-    private fun candidatePaths(manifest: WebManifest?): List<String> {
+    /**
+     * Ordered by how much the app has actually said about each candidate: what
+     * the manifest declares, then what the page links to, then the guesses.
+     */
+    private fun candidatePaths(manifest: WebManifest?, htmlIcons: List<String>): List<String> {
         val fromManifest = manifest?.icons.orEmpty()
-            // BitmapFactory cannot decode SVG, so rasterisable formats only.
-            .filter { icon ->
-                val ext = icon.src.substringAfterLast('.', "").lowercase()
-                ext in setOf("png", "webp", "jpg", "jpeg")
-            }
+            .filter { isRasterisable(it.src) }
             .sortedByDescending { it.maxSize }
             .map { it.src }
-        return fromManifest + FALLBACK_PATHS
+        val fromHtml = htmlIcons.filter { isRasterisable(it) }
+        return (fromManifest + fromHtml + FALLBACK_PATHS).distinct().take(MAX_CANDIDATES)
+    }
+
+    /**
+     * The query has to come off before the extension is read: generated
+     * manifests and hand-written links alike cache-bust with "icon.png?v=5",
+     * and testing the extension of "png?v=5" drops a usable icon.
+     */
+    private fun isRasterisable(src: String): Boolean {
+        val path = src.substringBefore('?').substringBefore('#')
+        return path.substringAfterLast('.', "").lowercase() in RASTER_EXTENSIONS
     }
 
     /** Resolves a manifest-relative icon path, refusing anything outside the app dir. */
@@ -82,7 +111,22 @@ object IconStore {
         return if (file.canonicalPath.startsWith(root)) file else null
     }
 
-    private fun decodeScaled(file: File, targetPx: Int): Bitmap? {
+    /**
+     * Null for anything unreadable, including a file whose header parses and
+     * whose pixels do not — a truncated PNG reports its size happily and then
+     * fails. Throwing here would fail the whole import over one bad icon, and
+     * the caller has both a next candidate and a letter tile to fall back on.
+     */
+    private fun decodeScaled(file: File, targetPx: Int): Bitmap? = try {
+        decodeScaledOrThrow(file, targetPx)
+    } catch (e: Exception) {
+        null
+    } catch (e: OutOfMemoryError) {
+        // A zip is free to declare dimensions it has no intention of honouring.
+        null
+    }
+
+    private fun decodeScaledOrThrow(file: File, targetPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null

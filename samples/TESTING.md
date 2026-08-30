@@ -5,7 +5,7 @@ python3 samples/build-samples.py
 ```
 
 `samples/dist/` に全 zip が出る。`samples/hello/` と `samples/diag/` はソース、
-`01`〜`10` は生成専用。番号順に取り込む必要はないが、`09` と `10` は
+`01`〜`16` は生成専用。番号順に取り込む必要はないが、`09` と `10` は
 **失敗するのが正解**なので取り違えないこと。
 
 失敗したときに見る場所を右端に書いてある。
@@ -61,7 +61,7 @@ python3 samples/build-samples.py
 | zip | 狙い | 期待 | 外れたときに見る場所 |
 |---|---|---|---|
 | `01-wrapped` | ルート自動検出 | 起動する。`__MACOSX` と `.DS_Store` が展開されない | `ZipInstaller.inspect` / `isNoise` |
-| `02-no-manifest` | manifest なしの退避 | 名前が `02-no-manifest`、頭文字タイル | `ZipInstaller.stage` / `IconStore.letterBitmap` |
+| `02-no-manifest` | manifest なしの名前 | 名前が「現場メモ & ログ」、頭文字タイル | `HtmlHead` / `IconStore.letterBitmap` |
 | `03-no-viewport` | viewport 注入 | clientWidth < 600px で OK 表示 | `WebAppActivity.onPageFinished` |
 | `04-subdir-start` | start_url 尊重 | `pages/start.html` が開く | `AppRepository.resolveStartUrl` |
 | `05-fullscreen` | display / theme_color | システムバーが消える | `WebAppActivity.applyChrome` |
@@ -72,6 +72,8 @@ python3 samples/build-samples.py
 | `12-folder-write` | フォルダへの継続書き込み | 下記参照 | `WebAppActivity.RESET_SCRIPT` |
 | `13-picker-modes` | ピッカーの 2 つの意味 | 下記参照 | `FileSystemShim.hasActivation` |
 | `14-download` | 書き出したファイルの保存 | 下記参照 | `DownloadShim` / `DownloadBridge` |
+| `15-link-icon` | `<link rel="icon">` を辿る | アイコンが青緑の四角 | `HtmlHead` / `IconStore.candidatePaths` |
+| `16-title-generic` | 雛形の既定 title を捨てる | 名前が `16-title-generic` | `HtmlHead` の `GENERIC_TITLES` |
 
 ### 08 の手順（app shell 型 SW での更新）
 編集は不要。2 つの zip を順に取り込むだけ。
@@ -147,6 +149,45 @@ python3 samples/build-samples.py
 
 許可の取り消しは詳細画面から。複数のフォルダを許可した場合、再接続では
 **最後に選んだフォルダ**が使われる。
+
+### 02 / 15 / 16 の手順（manifest なしの zip）
+3 本とも manifest.json を持たないので、名前もアイコンも index.html からしか
+取れない。**続けて取り込んで、一覧のスクリーンショット 1 枚**で 3 つとも判定できる。
+
+**作り直した zip を試す前に、前のものを一覧から削除すること。** manifest の無い
+zip は同一バイトのときだけ更新扱いになる（`AppRepository` の `findByZipHash`）。
+中身を変えて作り直すと別アプリとして増えるので、同じ名前のカードが 2 枚並び、
+どちらを見ているのか分からなくなる。
+
+| 取り込む | 一覧での名前 | 一覧でのアイコン |
+|---|---|---|
+| `02-no-manifest` | **現場メモ & ログ**（`<title>`）| 頭文字タイル |
+| `15-link-icon`（rev 2）| リンクされたアイコン | **青緑（teal）の四角** |
+| `16-title-generic` | **16-title-generic**（ファイル名）| 頭文字タイル |
+
+| 外れたら | 意味 |
+|---|---|
+| 02 が `02-no-manifest` | `<title>` を読めていない。`ZipInstaller.readHtmlHead` |
+| 02 が `現場メモ &amp; ログ` | 実体参照を復号していない。`HtmlHead` の `unescape` |
+| 02 の名前が化けている | 文字コードの判定。`HtmlHead` の `decode` |
+| 15 が頭文字タイル | link を辿れていないか、512 の候補で諦めている。`IconStore.extract` |
+| 15 が黒や赤の四角 | `15` の **rev 1** を取り込んでいる。作り直すこと |
+| 16 が `Document` | 雛形の既定値をそのまま採用している。`GENERIC_TITLES` |
+
+`15`（rev 2）は候補を 3 つ並べてある。document 順では `favicon.ico` が先頭、
+宣言サイズでは `assets/not-an-image.png` が最大で、**正解は 3 番目の 192**。
+つまり「順に試して、デコードできたものを採る」が効いていないと通らない。
+
+飛ばされる側を**画像でないファイル**にしてあるのには理由がある。rev 1 では
+途中で切れた PNG を使っていたが、`BitmapFactory` はそれを撥ねずに**読めた行まで
+描いた bitmap**を返す。壊れたアイコンは弾かれずに壊れたまま採用される
+（HANDOVER「4.」）。**Mac 上の `ImageIO` は同じファイルを例外で撥ねるので、
+デコードの可否をあちらで代用してはいけない。**
+
+`HtmlHead` は `android.*` に依存していないので、正規表現と文字コードの判定は
+Mac 上で単体実行して確かめられる。手順は HANDOVER の「5. 作業時の注意」。
+確かめられるのはそこまでで、**`BitmapFactory` が何を読めるかは端末でしか
+分からない**。
 
 ### 13 の手順（操作の有無で変わる showDirectoryPicker）
 `12` は再接続に `pwaLibrary.files.folders()` を使うので、`showDirectoryPicker()`

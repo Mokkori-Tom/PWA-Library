@@ -60,6 +60,7 @@ python3 samples/build-samples.py
 - `snake.zip` — 遊べるゲーム。最高スコアが localStorage に残る
 - `hello-pwa.zip` — origin 永続化と更新の確認用
 - `01`〜`08` — ルート検出 / start_url / MIME / viewport 注入などの構造テスト
+- `02`, `15`, `16` — manifest なしの zip の名前とアイコン
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）
 
 `samples/hello/` と `samples/diag/` がソース。編集して再生成すると
@@ -71,6 +72,10 @@ python3 samples/build-samples.py
 - 展開 (Zip Slip・zip bomb 対策、ルートフォルダ自動検出、`__MACOSX` 除去)
 - `manifest.json` 解析 → name / short_name / description / start_url / display /
   theme_color / icons
+- manifest のない zip では index.html の `<head>` から拾う。`<title>` を名前に、
+  `<link rel="icon">` をアイコンの候補に。**拒否はしない** — manifest は動作に
+  必要でなく（start_url は index.html、display は standalone に落ちる）、
+  エラーを見るのは zip を受け取った側で、manifest を足せる立場にないため
 - Room への保存、2列グリッドの一覧
 - WebView 実行 (Service Worker 対応、フルスクリーン、Back 制御、
   レンダラークラッシュ復帰、ファイル選択、requestFullscreen / 動画フルスクリーン)

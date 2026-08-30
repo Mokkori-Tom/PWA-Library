@@ -57,9 +57,7 @@ class AppRepository(private val context: Context) {
 
             // Needed before the lookup, because a relative id has to be paired
             // with the name to be safe to match on.
-            val incomingName = manifest?.name?.takeIf { it.isNotBlank() }
-                ?: manifest?.shortName?.takeIf { it.isNotBlank() }
-                ?: staged.fallbackName
+            val incomingName = contentName(staged) ?: staged.fallbackName
 
             // Falling back to the content hash means re-importing a zip this
             // app exported updates the entry it came from instead of adding a
@@ -75,14 +73,12 @@ class AppRepository(private val context: Context) {
             val uuid = existing?.uuid ?: UUID.randomUUID().toString()
             val appDir = installer.commit(staged, uuid)
 
-            // For a zip with no manifest, an existing name wins over the file
-            // name so that renaming the file does not rename the app.
-            val name = manifest?.name?.takeIf { it.isNotBlank() }
-                ?: manifest?.shortName?.takeIf { it.isNotBlank() }
-                ?: existing?.name
-                ?: staged.fallbackName
+            // Anything the zip says about itself outranks the stored name, so
+            // an update can rename the app. The name of the file it arrived in
+            // does not: renaming the file must not rename the app.
+            val name = contentName(staged) ?: existing?.name ?: staged.fallbackName
 
-            val icon = IconStore.extract(context, uuid, appDir, manifest)
+            val icon = IconStore.extract(context, uuid, appDir, manifest, staged.html.iconHrefs)
             val now = System.currentTimeMillis()
 
             val entity = AppEntity(
@@ -128,6 +124,19 @@ class AppRepository(private val context: Context) {
             installer.discard(staged)
         }
     }
+
+    /**
+     * The name the zip claims for itself, ignoring the file it was delivered in.
+     *
+     * The page's own title is the last of these because it describes a document
+     * rather than an app: a manifest that bothers to name itself is making a
+     * deliberate statement, while a title is often left at whatever the first
+     * page happened to be called.
+     */
+    private fun contentName(staged: StagedZip): String? =
+        staged.manifest?.name?.takeIf { it.isNotBlank() }
+            ?: staged.manifest?.shortName?.takeIf { it.isNotBlank() }
+            ?: staged.html.title
 
     fun observeGrants(appUuid: String): Flow<List<FolderGrant>> = grantDao.observeForApp(appUuid)
 

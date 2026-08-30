@@ -109,11 +109,18 @@ def wrapped():
 
 @case
 def no_manifest():
-    """No manifest at all: name falls back to the file name, icon to a letter tile."""
-    body = "<p>manifest.json のない zip です。</p>" \
-           "<p>一覧での名前が <code>02-no-manifest</code>、アイコンが頭文字タイルになっていれば " \
-           "<span class='ok'>フォールバック OK</span>。</p>"
-    write("02-no-manifest.zip", {"index.html": page("manifest なし", body)})
+    """No manifest: the name comes from <title>, the icon falls back to a tile."""
+    body = """
+<p>版: <b>rev 2</b>。manifest.json のない zip です。名前もアイコンも
+index.html からしか取れません。</p>
+<p>一覧での名前が <b>現場メモ &amp; ログ</b>、アイコンが<b>頭文字タイル</b>なら
+<span class='ok'>OK</span>。</p>
+<ul>
+  <li><code>02-no-manifest</code> のまま → &lt;title&gt; を読めていない（ファイル名に落ちている）</li>
+  <li><code>現場メモ &amp;amp; ログ</code> → 実体参照を復号していない</li>
+</ul>
+"""
+    write("02-no-manifest.zip", {"index.html": page("現場メモ &amp; ログ", body)})
 
 
 @case
@@ -721,6 +728,61 @@ document.getElementById('data').onclick = function () {
         "manifest.json": manifest(id="test.download", name="14 ダウンロード",
                                   start_url="index.html", display="standalone"),
     })
+
+
+# --------------------------------------------- manifest-less metadata (02, 15, 16)
+# These ship without a manifest, so the name and the icon can only come out of
+# index.html. 02 covers the title; the two below cover what it cannot.
+
+
+@case
+def link_icon():
+    """<link rel="icon"> is followed, and an unusable candidate is stepped over.
+
+    rev 2. The skipped candidate used to be a truncated PNG, on the assumption
+    that a decoder would reject it. BitmapFactory does not — it returns the rows
+    it managed to read (HANDOVER "4."), so the sample proved nothing. It is now a
+    file that is not an image at all, which fails at the bounds pass.
+
+    Three links, ordered so that only the right behaviour reaches the right icon:
+      favicon.ico       garbage bytes, in a format BitmapFactory cannot read
+      not-an-image.png  the largest declared size, but plain text underneath
+      logo-a1b2c3.png   the one that must actually win
+    """
+    body = """
+<p>版: <b>rev 2</b>。manifest.json はありません。アイコンは
+<code>&lt;link rel="icon"&gt;</code> からしか辿れません。</p>
+<p>一覧のアイコンが <b>青緑（teal）の四角</b>なら <span class='ok'>OK</span>。</p>
+<ul>
+  <li>頭文字タイル → 512 の候補で諦めている（順に試せていない）</li>
+  <li>黒や赤 → rev 1 の zip を取り込んでいる。作り直すこと</li>
+</ul>
+<p class='note'>512 として宣言されている <code>assets/not-an-image.png</code> は
+中身がただのテキストで、寸法すら読めない。192 の青緑に辿り着くには、
+候補をひとつ飛ばす必要がある。</p>
+"""
+    head = ('<link rel="shortcut icon" href="favicon.ico">\n'
+            '<link rel="icon" type="image/png" sizes="512x512" href="assets/not-an-image.png">\n'
+            '<link rel="icon" type="image/png" sizes="192x192" href="assets/logo-a1b2c3.png">')
+    write("15-link-icon.zip", {
+        "index.html": page("リンクされたアイコン", body, head=head),
+        "favicon.ico": b"\x00\x00\x01\x00" + b"not really an icon",
+        # Not an image in any format: BitmapFactory cannot even read bounds off
+        # it, so it fails at the first pass rather than half way through.
+        "assets/not-an-image.png": b"png is in the name only; these are just bytes.\n" * 8,
+        "assets/logo-a1b2c3.png": png((13, 148, 136)),
+    })
+
+
+@case
+def title_generic():
+    """A scaffold's default title must not become the app's name."""
+    body = """
+<p>版: <b>rev 1</b>。manifest なし、<code>&lt;title&gt;Document&lt;/title&gt;</code>。</p>
+<p>一覧での名前が <b>16-title-generic</b>（ファイル名）なら <span class='ok'>OK</span>。</p>
+<p><b>Document</b> と出ていたら、雛形の既定値をそのまま名前に採用しています。</p>
+"""
+    write("16-title-generic.zip", {"index.html": page("Document", body)})
 
 
 # --------------------------------------------------------------- negative cases
