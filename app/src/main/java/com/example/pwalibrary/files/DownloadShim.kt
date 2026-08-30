@@ -16,6 +16,9 @@ package com.example.pwalibrary.files
  *  - **The file name.** DownloadListener is never told the `download`
  *    attribute, so without recording it every export would land as
  *    `downloadfile.bin`.
+ *
+ * A `data:` URL is handled here outright: WebView routes neither the click nor
+ * a download to the app, so the button would do nothing at all.
  */
 object DownloadShim {
 
@@ -26,6 +29,7 @@ object DownloadShim {
 
   var blobs = {};   // object URL -> Blob
   var names = {};   // href -> file name from <a download>
+  var seq = 0;
   var KEEP_AFTER_REVOKE = 60000;
 
   // Pages revoke the URL moments after clicking (fieldform waits 1.5s), while
@@ -52,18 +56,53 @@ object DownloadShim {
     if (!node || node.nodeType !== 1) return;
     var href = node.getAttribute('href');
     var name = node.getAttribute('download');
-    if (href && name) names[href] = name;
+    if (!href || !name) return;
+    names[href] = name;
+
+    // A data: URL click never reaches DownloadListener — WebView drops it, and
+    // the button simply does nothing — so this one is handled here instead of
+    // waiting to be asked.
+    if (href.indexOf('data:') === 0) {
+      var blob = blobFromDataUrl(href);
+      if (!blob) return;
+      e.preventDefault();
+      send('js' + (++seq), blob, name);
+    }
   }, true);
+
+  function blobFromDataUrl(url) {
+    var comma = url.indexOf(',');
+    if (comma < 0) return null;
+    var header = url.substring(5, comma);
+    var body = url.substring(comma + 1);
+    var mime = header.split(';')[0] || 'application/octet-stream';
+    try {
+      var bytes;
+      if (header.indexOf(';base64') >= 0) {
+        var binary = atob(body);
+        bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      } else {
+        bytes = new TextEncoder().encode(decodeURIComponent(body));
+      }
+      return new Blob([bytes], { type: mime });
+    } catch (e) {
+      return null;
+    }
+  }
 
   window.__pwalibDownloadName = function (url) { return names[url] || ''; };
 
   window.__pwalibReadBlob = function (url, id) {
     var blob = blobs[url];
     if (!blob) { D.fail(id, 'データが見つかりません'); return; }
+    send(id, blob, names[url] || '');
+  };
 
+  function send(id, blob, name) {
     var CHUNK = 262144;
     var offset = 0;
-    D.open(id, names[url] || '', blob.type || '', String(blob.size));
+    D.open(id, name, blob.type || '', String(blob.size));
 
     // Sliced rather than read whole: an export can be megabytes, and each
     // slice crosses the bridge as its own base64 string.
@@ -82,7 +121,7 @@ object DownloadShim {
       reader.readAsDataURL(blob.slice(offset, offset + CHUNK));
     }
     next();
-  };
+  }
 })();
 """
 }
