@@ -627,6 +627,7 @@ def downloads():
 <p>ページが書き出したファイルを保存できるか。<b>fieldform と同じ形</b>で、
 blob URL を <code>&lt;a download&gt;</code> に渡し、1.5 秒後に revoke する。</p>
 
+<p>版: <code>rev 2</code>（この表示が無ければ古い zip が入っている）</p>
 <p>診断: <code id="diag">-</code></p>
 
 <p><button id="csv">CSV を書き出す</button>
