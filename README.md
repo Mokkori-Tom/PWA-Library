@@ -57,6 +57,7 @@ python3 samples/build-samples.py
 `samples/dist/` にテスト用 zip が出る。手順と期待値は **[samples/TESTING.md](samples/TESTING.md)**。
 
 - `diag.zip` — WebView で何が動いて何が動かないかを一覧表示する診断アプリ
+- `snake.zip` — 遊べるゲーム。最高スコアが localStorage に残る
 - `hello-pwa.zip` — origin 永続化と更新の確認用
 - `01`〜`08` — ルート検出 / start_url / MIME / viewport 注入などの構造テスト
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）

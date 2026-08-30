@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>スネーク</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a472a">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 12px; background: #0b120e; color: #d8e6dc;
+    font-family: system-ui, sans-serif; text-align: center;
+    -webkit-user-select: none; user-select: none;
+  }
+  h1 { font-size: 18px; margin: 4px 0 10px; letter-spacing: .1em; }
+  #hud { display: flex; justify-content: center; gap: 20px; font-size: 15px; margin-bottom: 8px; }
+  #hud b { color: #7cd689; font-size: 18px; }
+  #wrap { display: flex; justify-content: center; }
+  canvas { touch-action: none; border-radius: 12px; box-shadow: 0 0 0 2px #1a472a; }
+  #msg { min-height: 22px; margin: 10px 0; color: #b7f2c2; font-size: 14px; }
+  #pad { display: grid; grid-template-columns: repeat(3, 62px); justify-content: center; gap: 8px; }
+  #pad button, #start {
+    font: inherit; font-size: 20px; padding: 12px 0; border: 0; border-radius: 10px;
+    background: #1a472a; color: #d8e6dc;
+  }
+  #pad button:active, #start:active { background: #2b6b42; }
+  #start { font-size: 15px; padding: 10px 22px; margin-top: 12px; }
+  .spacer { visibility: hidden; }
+</style>
+</head>
+<body>
+  <h1>スネーク</h1>
+  <div id="hud"><span>スコア <b id="score">0</b></span><span>最高 <b id="best">0</b></span></div>
+  <div id="wrap"><canvas id="board"></canvas></div>
+  <p id="msg"></p>
+  <div id="pad">
+    <button class="spacer"></button>
+    <button data-dir="0,-1">↑</button>
+    <button class="spacer"></button>
+    <button data-dir="-1,0">←</button>
+    <button data-dir="0,1">↓</button>
+    <button data-dir="1,0">→</button>
+  </div>
+  <button id="start">はじめる</button>
+  <script src="game.js"></script>
+</body>
+</html>

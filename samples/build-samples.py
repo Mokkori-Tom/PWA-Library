@@ -505,7 +505,7 @@ def no_index():
 
 
 def bundle_dir(name, src):
-    """Zips samples/<src>/ as-is (hello, diag)."""
+    """Zips samples/<src>/ as-is (hello, diag, snake)."""
     files = {}
     for base, _, names in os.walk(src):
         for n in names:
@@ -567,6 +567,7 @@ if __name__ == "__main__":
     clean()
     bundle_dir("hello-pwa.zip", os.path.join(ROOT, "hello"))
     bundle_dir("diag.zip", os.path.join(ROOT, "diag"))
+    bundle_dir("snake.zip", os.path.join(ROOT, "snake"))
     for fn in CASES:
         fn()
     syntax_check()

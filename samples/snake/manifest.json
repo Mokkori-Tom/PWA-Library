@@ -1,0 +1,15 @@
+{
+  "id": "game.snake.pwalib",
+  "name": "スネーク",
+  "short_name": "スネーク",
+  "description": "オフラインで遊べるスネークゲーム",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0f1a14",
+  "theme_color": "#1a472a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
