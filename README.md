@@ -51,8 +51,13 @@ Gradle を入れて `gradle wrapper` を一度走らせる。
 ## 動作確認
 
 ```
+tools/typecheck.sh --test
 python3 samples/build-samples.py
 ```
+
+`tools/typecheck.sh` は Compose 以外を Mac 上で型チェックし、`--test` で
+`HtmlHead` のテストも走らせる。Android Studio 同梱の kotlinc と Gradle の
+キャッシュを使うので、テスト用の依存は増やしていない。
 
 `samples/dist/` にテスト用 zip が出る。手順と期待値は **[samples/TESTING.md](samples/TESTING.md)**。
 
