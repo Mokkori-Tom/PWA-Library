@@ -38,7 +38,7 @@ CACHE=~/.gradle/caches/modules-2/files-2.1
 # needs the signatures to resolve, and an unresolved one fails loudly.
 LIBS="$ANDROID_JAR"
 add_jar() {
-    local found=$(find "$CACHE" -name "$1" -not -name '*-sources.jar' 2>/dev/null | sort -V | tail -1)
+    local found=$(find "$CACHE" -name "$1" -not -name '*-sources.jar' -not -name '*-javadoc.jar' 2>/dev/null | sort -V | tail -1)
     [[ -n "$found" ]] && LIBS="$LIBS:$found" || echo "  (見つからず、続行: $1)" >&2
 }
 add_aar() {
