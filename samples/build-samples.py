@@ -932,6 +932,139 @@ def linked_manifest():
         "「同じ名前のアプリがあります」と尋ねられたら、id が読めていない。"))
 
 
+# ------------------------------------------------------------ camera (20)
+
+@case
+def camera_capture():
+    """Taking a photo from a file input.
+
+    The container declares no CAMERA permission, so getUserMedia stays denied.
+    A file input that accepts images is offered the device's camera app
+    instead: the page gets the one picture the user took, never a live feed.
+    """
+    body = r"""
+<p>ファイル入力からカメラで撮れるか。<b>カメラの権限は求められない</b>のが正しい
+（撮影は端末のカメラアプリが行う）。</p>
+
+<p>版: <code>rev 1</code>　読み込み: <code id="loaded">-</code></p>
+<p>getUserMedia: <code id="gum">-</code>　BarcodeDetector: <code id="bd">-</code></p>
+
+<p>A. <code>accept="image/*"</code><br>
+   <input id="a" type="file" accept="image/*"></p>
+<p>B. <code>accept="image/*" capture</code><br>
+   <input id="b" type="file" accept="image/*" capture="environment"></p>
+<p>C. <code>accept</code> なし<br>
+   <input id="c" type="file"></p>
+<p>D. <code>accept="text/plain"</code><br>
+   <input id="d" type="file" accept="text/plain"></p>
+
+<p id="out">まだ何も選んでいない</p>
+<p><img id="preview" alt="" style="max-width:100%; display:none; border:1px solid #ccd"></p>
+
+<p class="note">
+A は<b>「写真を撮る / ファイルを選ぶ」</b>の選択が出る。B は<b>いきなりカメラ</b>が開く。
+C と D は<b>これまでどおりファイル選択だけ</b>。撮ったあとは下に名前・種類・
+大きさ・画素数と写真そのものが出る。
+</p>
+
+<script>
+var out = document.getElementById('out');
+var preview = document.getElementById('preview');
+
+function show(html, ok) {
+  out.innerHTML = "<span class='" + (ok ? 'ok' : 'ng') + "'>" + html + "</span>";
+}
+
+window.addEventListener('error', function (e) {
+  show('ページ側で例外: ' + (e.message || e.type), false);
+});
+
+// A reload is otherwise invisible in a screenshot, and coming back from the
+// camera app is exactly when one can happen.
+document.getElementById('loaded').textContent = new Date().toLocaleTimeString();
+
+document.getElementById('bd').textContent =
+  ('BarcodeDetector' in window) ? 'あり' : 'なし';
+
+(function () {
+  var el = document.getElementById('gum');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    el.textContent = 'API なし';
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    el.textContent = '許可された（想定外）';
+  }).catch(function (e) {
+    el.textContent = '拒否 (' + e.name + ')';
+  });
+})();
+
+function describe(which, file) {
+  var line = which + ': ' + file.name + ' / ' + (file.type || '種類なし') +
+             ' / ' + file.size.toLocaleString() + ' B';
+  if (file.type.indexOf('image/') !== 0) {
+    preview.style.display = 'none';
+    show(line, true);
+    return;
+  }
+  var url = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function () {
+    line += ' / ' + img.naturalWidth + ' x ' + img.naturalHeight + ' px';
+    preview.src = url;
+    preview.style.display = 'block';
+    show(line, true);
+    readCode(img, line);
+  };
+  img.onerror = function () {
+    show(line + ' / 画像として読めない', false);
+  };
+  img.src = url;
+}
+
+function readCode(img, line) {
+  if (!('BarcodeDetector' in window)) return;
+  new BarcodeDetector().detect(img).then(function (codes) {
+    var text = codes.length
+      ? codes.map(function (c) { return c.format + ': ' + c.rawValue; }).join(' ; ')
+      : 'コードなし';
+    out.appendChild(document.createElement('br'));
+    out.appendChild(document.createTextNode('読み取り: ' + text));
+  }).catch(function (e) {
+    out.appendChild(document.createElement('br'));
+    out.appendChild(document.createTextNode('読み取り失敗: ' + e.name));
+  });
+}
+
+['a', 'b', 'c', 'd'].forEach(function (id) {
+  var input = document.getElementById(id);
+  input.addEventListener('change', function () {
+    if (!input.files.length) {
+      show(id.toUpperCase() + ': 何も選ばれなかった', true);
+      return;
+    }
+    describe(id.toUpperCase(), input.files[0]);
+  });
+  // "cancel" is how a page learns the chooser was dismissed. Without an
+  // answer from the container this never fires and the input stays stuck.
+  input.addEventListener('cancel', function () {
+    preview.style.display = 'none';
+    show(id.toUpperCase() + ': 取り消された', true);
+  });
+});
+</script>
+"""
+    write("20-camera.zip", {
+        "index.html": page("20 カメラで撮る", body),
+        "icon-192.png": png((190, 90, 40)),
+        "manifest.json": manifest(id="test.camera", name="20 カメラで撮る",
+                                  start_url="index.html", display="standalone",
+                                  icons=[{"src": "icon-192.png", "sizes": "192x192",
+                                          "type": "image/png"}]),
+    })
+
+
 # --------------------------------------------------------------- negative cases
 
 @case

@@ -1,6 +1,8 @@
 package io.github.mokkori_tom.pwalibrary.web
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -26,6 +28,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.core.view.WindowInsetsCompat
@@ -34,6 +37,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.webkit.ServiceWorkerClientCompat
 import androidx.webkit.ServiceWorkerControllerCompat
 import androidx.webkit.WebViewFeature
+import io.github.mokkori_tom.pwalibrary.R
 import io.github.mokkori_tom.pwalibrary.data.AppDatabase
 import io.github.mokkori_tom.pwalibrary.data.AppEntity
 import io.github.mokkori_tom.pwalibrary.data.FolderGrant
@@ -60,6 +64,7 @@ class WebAppActivity : ComponentActivity() {
         private const val STATE_SAVE_NAME = "pending_save_name"
         private const val STATE_SAVE_MIME = "pending_save_mime"
         private const val STATE_SAVE_TEMP = "pending_save_temp"
+        private const val STATE_CAPTURE_PATH = "pending_capture_path"
 
         private var serviceWorkerConfigured = false
 
@@ -133,6 +138,12 @@ class WebAppActivity : ComponentActivity() {
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private lateinit var fileChooser: ActivityResultLauncher<Array<String>>
+    private lateinit var camera: ActivityResultLauncher<Uri>
+    /** The file the camera app was asked to write, until the page is handed it. */
+    private var pendingCapture: File? = null
+    private var chooserDialog: Dialog? = null
+    /** False on a fresh launch, true when rebuilt after the system recycled us. */
+    private var restored = false
     private lateinit var folderPicker: ActivityResultLauncher<Uri?>
 
     /** Set while the page holds the screen via requestFullscreen() or <video>. */
@@ -184,9 +195,15 @@ class WebAppActivity : ComponentActivity() {
 
         fileChooser = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             // Must always answer, even on cancel, or the file input stays stuck.
-            filePathCallback?.onReceiveValue(uris.takeIf { it.isNotEmpty() }?.toTypedArray())
-            filePathCallback = null
+            answerFileChooser(uris.takeIf { it.isNotEmpty() }?.toTypedArray())
         }
+
+        camera = registerForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+            onPhotoTaken(saved)
+        }
+
+        restored = savedInstanceState != null
+        pendingCapture = savedInstanceState?.getString(STATE_CAPTURE_PATH)?.let(::File)
 
         pendingDirectoryRequest = savedInstanceState?.getString(STATE_DIRECTORY_REQUEST)
         // The staged file is in the cache directory, so it outlives the
@@ -225,6 +242,9 @@ class WebAppActivity : ComponentActivity() {
         configureServiceWorkers()
 
         currentApp = app
+        // Photos from the last session. Kept until now because the page reads a
+        // chosen file lazily, long after the chooser has answered.
+        if (!restored) capturesDir(app.uuid).deleteRecursively()
         appRootPath = app.startUrl.substringBeforeLast('/', "")
             .let { if (it.isEmpty()) "/" else "/$it/" }
         val loader = AppAssetRegistry.loaderFor(app.uuid, appDir)
@@ -374,13 +394,15 @@ class WebAppActivity : ComponentActivity() {
                     .filter { it.isNotBlank() }
                     .toTypedArray()
                     .ifEmpty { arrayOf("*/*") }
-                return try {
-                    fileChooser.launch(types)
-                    true
-                } catch (e: ActivityNotFoundException) {
-                    filePathCallback = null
-                    callback.onReceiveValue(null)
-                    false
+                val wantsImage = types.any { it.startsWith("image/") }
+                return when {
+                    // <input capture>: the page asked for the camera outright.
+                    wantsImage && params.isCaptureEnabled -> launchCamera() || launchFileChooser(types)
+                    wantsImage -> {
+                        offerCameraOrFiles(types)
+                        true
+                    }
+                    else -> launchFileChooser(types)
                 }
             }
 
@@ -585,6 +607,66 @@ class WebAppActivity : ComponentActivity() {
 
     private fun stagingDir(): File = File(cacheDir, "downloads")
 
+    // ------------------------------------------------------- file inputs
+
+    private fun answerFileChooser(uris: Array<Uri>?) {
+        filePathCallback?.onReceiveValue(uris)
+        filePathCallback = null
+    }
+
+    private fun launchFileChooser(types: Array<String>): Boolean = try {
+        fileChooser.launch(types)
+        true
+    } catch (e: ActivityNotFoundException) {
+        answerFileChooser(null)
+        false
+    }
+
+    private fun offerCameraOrFiles(types: Array<String>) {
+        chooserDialog = AlertDialog.Builder(this)
+            .setItems(
+                arrayOf(getString(R.string.take_photo), getString(R.string.choose_file))
+            ) { _, which ->
+                if (which != 0 || !launchCamera()) launchFileChooser(types)
+            }
+            .setOnCancelListener { answerFileChooser(null) }
+            .show()
+    }
+
+    /** One directory per mini-app, so clearing one app's photos cannot touch another's. */
+    private fun capturesDir(uuid: String): File = File(cacheDir, "captures/$uuid")
+
+    /**
+     * Hands the shot to the device's camera app rather than opening the camera
+     * here. That needs no CAMERA permission, and the page never sees a live
+     * feed: it gets the one picture the user chose to take, or nothing.
+     */
+    private fun launchCamera(): Boolean {
+        val uuid = currentApp?.uuid ?: return false
+        val file = File(capturesDir(uuid).apply { mkdirs() }, "photo-${System.currentTimeMillis()}.jpg")
+        return try {
+            pendingCapture = file
+            camera.launch(FileProvider.getUriForFile(this, "$packageName.fileprovider", file))
+            true
+        } catch (e: ActivityNotFoundException) {
+            pendingCapture = null
+            false
+        }
+    }
+
+    private fun onPhotoTaken(saved: Boolean) {
+        val file = pendingCapture
+        pendingCapture = null
+        // After being recycled behind the camera app the page has reloaded and
+        // the input that asked is gone, so there is nobody left to hand it to.
+        if (!saved || file == null || file.length() == 0L || filePathCallback == null) {
+            file?.delete()
+            answerFileChooser(null)
+            return
+        }
+        answerFileChooser(arrayOf(FileProvider.getUriForFile(this, "$packageName.fileprovider", file)))
+    }
+
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
@@ -739,6 +821,7 @@ class WebAppActivity : ComponentActivity() {
         // The picker is another app's activity; this one can be recycled while
         // it is on screen.
         outState.putString(STATE_DIRECTORY_REQUEST, pendingDirectoryRequest)
+        outState.putString(STATE_CAPTURE_PATH, pendingCapture?.absolutePath)
         pendingSave?.let {
             outState.putString(STATE_SAVE_PATH, it.file.absolutePath)
             outState.putString(STATE_SAVE_NAME, it.fileName)
@@ -759,8 +842,9 @@ class WebAppActivity : ComponentActivity() {
 
     override fun onDestroy() {
         exitCustomView()
-        filePathCallback?.onReceiveValue(null)
-        filePathCallback = null
+        chooserDialog?.dismiss()
+        chooserDialog = null
+        answerFileChooser(null)
         webView?.let { view ->
             container.removeView(view)
             view.destroy()

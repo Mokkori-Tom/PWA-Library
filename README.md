@@ -69,6 +69,7 @@ python3 samples/build-samples.py
 - `17` — manifest に埋め込まれた `data:` URI アイコン
 - `18a`, `18b` — 同名で他に手がかりのない zip（更新か新規かを尋ねる）
 - `19a`, `19b` — `<link rel="manifest">` からしか辿れない manifest
+- `20` — ファイル入力からカメラで撮る
 - `09`, `10` — **拒否されるのが正解**（Zip Slip、index.html なし）
 
 `samples/hello/` と `samples/diag/` がソース。編集して再生成すると
@@ -99,6 +100,10 @@ python3 samples/build-samples.py
 - zip の保存 (SAF) と共有 (FileProvider)。取り込んだ zip をそのまま渡すので、
   受け取った相手のファイルと 1 バイトも変わらない
 - ダウンロードの保存 (blob / data URL / アプリ内ファイル)。SAF で保存先を選ぶ
+- 画像を受け付けるファイル入力 (`<input type="file" accept="image/*">`) から
+  カメラで撮る。撮影は端末のカメラアプリに任せるので **`CAMERA` 権限は宣言
+  しない**。ミニアプリに渡るのは利用者が撮った 1 枚だけで、ライブ映像
+  (`getUserMedia`) は引き続き拒否する
 - File System Access API の模倣 (`showDirectoryPicker` / `getFileHandle` /
   `createWritable` / ディレクトリ列挙)。SAF が裏打ち
 

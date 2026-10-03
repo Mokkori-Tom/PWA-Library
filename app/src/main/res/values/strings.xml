@@ -12,4 +12,6 @@
     <string name="export_zip">zip を保存</string>
     <string name="share_zip">zip を共有</string>
     <string name="share_chooser">アプリを共有</string>
+    <string name="take_photo">写真を撮る</string>
+    <string name="choose_file">ファイルを選ぶ</string>
 </resources>

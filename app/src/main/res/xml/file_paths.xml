@@ -5,4 +5,6 @@
       and the original zips stay unreachable to other apps.
     -->
     <cache-path name="shared_zips" path="share/" />
+    <!-- Where the camera app writes a photo a mini-app's file input asked for. -->
+    <cache-path name="captures" path="captures/" />
 </paths>
