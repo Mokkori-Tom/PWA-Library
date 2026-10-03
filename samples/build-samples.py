@@ -742,7 +742,7 @@ def link_icon():
 
     rev 2. The skipped candidate used to be a truncated PNG, on the assumption
     that a decoder would reject it. BitmapFactory does not — it returns the rows
-    it managed to read (HANDOVER "4."), so the sample proved nothing. It is now a
+    it managed to read, so the sample proved nothing. It is now a
     file that is not an image at all, which fails at the bounds pass.
 
     Three links, ordered so that only the right behaviour reaches the right icon:

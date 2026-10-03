@@ -234,7 +234,7 @@ object IconStore {
      * Null for anything the decoder refuses outright. It does **not** catch a
      * partially readable image: BitmapFactory returns a truncated PNG as the
      * rows it managed to read rather than as a failure, so a corrupt icon is
-     * adopted rather than skipped (HANDOVER "4."). Throwing is not an option
+     * adopted rather than skipped. Throwing is not an option
      * either — that would fail the whole import over one bad icon, when the
      * caller has both a next candidate and a letter tile to fall back on.
      */
