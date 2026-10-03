@@ -139,3 +139,7 @@ zip が本当にその名前のフォルダを含んでいる場合は、その�
 - ダウンロードは `ACTION_CREATE_DOCUMENT` で保存先を選ばせる。blob はページの
   CSP が `fetch` を禁じていても読めるよう、`URL.createObjectURL` を包んで Blob を
   保持し FileReader で読む。ただし成否をページに返す方法はない
+
+## ライセンス
+
+MIT License。全文は `LICENSE` を参照。
