@@ -25,6 +25,13 @@ android {
         }
     }
 
+    // The dependency metadata block is encrypted with a Google key, so nobody
+    // else can read it. F-Droid's scanner rejects an APK that carries one.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
