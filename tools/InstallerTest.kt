@@ -1,5 +1,5 @@
-import com.example.pwalibrary.install.HtmlHead
-import com.example.pwalibrary.install.InstallPaths
+import io.github.mokkori_tom.pwalibrary.install.HtmlHead
+import io.github.mokkori_tom.pwalibrary.install.InstallPaths
 
 /**
  * Checks the installer's pure parts without a device or a Gradle build.

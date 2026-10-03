@@ -82,11 +82,11 @@ for root, _, files in os.walk("app/src/main/res"):
         names.update(el.get("name") for el in tree if el.tag == "string" and el.get("name"))
 body = "\n".join(f"        const val {n} = {i + 1}" for i, n in enumerate(sorted(names)))
 open(os.path.join(out, "Stubs.kt"), "w").write(
-    "package com.example.pwalibrary\n\n"
+    "package io.github.mokkori_tom.pwalibrary\n\n"
     "object R {\n    object string {\n" + body + "\n    }\n}\n"
 )
 open(os.path.join(out, "WebAppActivityStub.kt"), "w").write(
-    "package com.example.pwalibrary.web\n\n"
+    "package io.github.mokkori_tom.pwalibrary.web\n\n"
     "import android.content.Context\n"
     "import android.content.Intent\n\n"
     "object WebAppActivity {\n"
@@ -95,7 +95,7 @@ open(os.path.join(out, "WebAppActivityStub.kt"), "w").write(
 )
 PY
 
-SRC=app/src/main/java/com/example/pwalibrary
+SRC=app/src/main/java/io/github/mokkori_tom/pwalibrary
 SOURCES=(
     "$OUT/Stubs.kt" "$OUT/WebAppActivityStub.kt"
     $SRC/install/*.kt $SRC/data/*.kt $SRC/files/*.kt $SRC/shortcut/*.kt
@@ -104,7 +104,7 @@ SOURCES=(
 
 echo "型チェック: install / data / files / shortcut / web（Compose を除く）"
 "$KOTLIN_HOME/bin/kotlinc" -cp "$LIBS" -d "$OUT/classes" -nowarn $SOURCES 2>&1 | grep -v '^warning:' || true
-[[ -d "$OUT/classes/com/example/pwalibrary/data" ]] || { echo "型チェック 失敗"; exit 1; }
+[[ -d "$OUT/classes/io/github/mokkori_tom/pwalibrary/data" ]] || { echo "型チェック 失敗"; exit 1; }
 echo "型チェック OK"
 
 [[ "$1" == "--test" ]] || exit 0

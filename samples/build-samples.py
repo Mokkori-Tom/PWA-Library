@@ -941,7 +941,7 @@ def traversal():
         "index.html": page("これは表示されてはいけない", "<p class='ng'>展開されてしまいました</p>"),
         "manifest.json": manifest(id="test.traversal", name="09 traversal"),
         "../../databases/pwa_library.db": b"OVERWRITTEN",
-        "../../../../data/data/com.example.pwalibrary/files/pwned.txt": b"pwned",
+        "../../../../data/data/io.github.mokkori_tom.pwalibrary/files/pwned.txt": b"pwned",
     })
 
 

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pwalibrary"
+    namespace = "io.github.mokkori_tom.pwalibrary"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.pwalibrary"
+        applicationId = "io.github.mokkori_tom.pwalibrary"
         // requestPinShortcut() requires API 26.
         minSdk = 26
         targetSdk = 35

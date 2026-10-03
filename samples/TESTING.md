@@ -362,7 +362,7 @@ revoke** し、ページの CSP は `connect-src 'none'`。
 | `10-no-index-MUST-FAIL` | 「index.html が見つかりません」で拒否 | `ZipInstaller.inspect` |
 
 09 は `../../databases/pwa_library.db` と
-`../../../../data/data/com.example.pwalibrary/files/pwned.txt` を含む。
+`../../../../data/data/io.github.mokkori_tom.pwalibrary/files/pwned.txt` を含む。
 **取り込みが成功したらそこで中断すること。** アプリ内部を上書きされた状態になる。
 
 ---
