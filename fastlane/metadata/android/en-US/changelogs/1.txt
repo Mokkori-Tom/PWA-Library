@@ -1,0 +1,6 @@
+First release.
+
+• Import web apps from a zip and launch them from the home screen
+• No permissions and no network access
+• Folder access through the system picker
+• Updates keep the data an app has saved

@@ -1,0 +1,33 @@
+PWA Library takes a web app packed as a zip file — an index.html and whatever comes with it — and lets you launch it from the home screen like any other app. It is meant for people who were handed such a zip and just want to use it, not for developers.
+
+<b>What it does</b>
+
+• Imports a zip from the file picker, the share sheet, or a file manager
+• Shows each app with the name and icon from its web manifest, or from its HTML when there is no manifest
+• Pins apps to the home screen; each one opens in its own window
+• Updates an app in place when you import a newer zip, keeping the data the app has saved
+• Lets you rename an app, pick a different icon, export the zip again, or share it
+
+<b>No permissions, no network</b>
+
+The app declares no Android permissions at all — not even internet access. A zip from an unknown source cannot send anything anywhere, because the container it runs in has no way out. Each imported app is served from its own origin, so its localStorage, IndexedDB and caches are kept apart from every other app's.
+
+This also means apps that load scripts or data from the internet will not work here. Apps that carry everything inside the zip will.
+
+<b>Files, without storage permission</b>
+
+Imported apps can use the standard File System Access API (showDirectoryPicker and friends). You choose a folder in the system picker; that app can then read and write in that folder only, and keeps access across restarts until you revoke it from the app's detail screen. Downloads triggered by a page are saved to a location you pick.
+
+<b>What works inside</b>
+
+Service Workers, IndexedDB, Cache Storage, Web Workers, WebAssembly, WebGL, fullscreen, and file inputs. Single-page apps built with Vite or exported from Next.js run as they are, including builds that expect to live under a subpath.
+
+<b>Known limits</b>
+
+• No network access for imported apps, by design
+• Web notifications are not available in Android's WebView
+• Camera, microphone and location requests are denied
+• Icons that exist only as SVG are not rendered; a letter tile is shown instead, and you can pick an image yourself
+• The system folder picker does not allow the Download folder or the storage root
+
+The interface is currently in Japanese.
