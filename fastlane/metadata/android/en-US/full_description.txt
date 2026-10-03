@@ -7,6 +7,7 @@ PWA Library takes a web app packed as a zip file — an index.html and whatever 
 • Pins apps to the home screen; each one opens in its own window
 • Updates an app in place when you import a newer zip, keeping the data the app has saved
 • Lets you rename an app, pick a different icon, export the zip again, or share it
+• Lets an imported app take a photo through a file input, using your camera app
 
 <b>No permissions, no network</b>
 
@@ -20,13 +21,13 @@ Imported apps can use the standard File System Access API (showDirectoryPicker a
 
 <b>What works inside</b>
 
-Service Workers, IndexedDB, Cache Storage, Web Workers, WebAssembly, WebGL, fullscreen, and file inputs. Single-page apps built with Vite or exported from Next.js run as they are, including builds that expect to live under a subpath.
+Service Workers, IndexedDB, Cache Storage, Web Workers, WebAssembly, WebGL, fullscreen, and file inputs. An image file input can take a photo: the picture is taken by your camera app, so no camera permission is needed and the imported app only receives the one photo you took. Single-page apps built with Vite or exported from Next.js run as they are, including builds that expect to live under a subpath.
 
 <b>Known limits</b>
 
 • No network access for imported apps, by design
 • Web notifications are not available in Android's WebView
-• Camera, microphone and location requests are denied
+• Live camera, microphone and location requests are denied
 • Icons that exist only as SVG are not rendered; a letter tile is shown instead, and you can pick an image yourself
 • The system folder picker does not allow the Download folder or the storage root
 

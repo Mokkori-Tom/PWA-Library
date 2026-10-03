@@ -1,0 +1,2 @@
+• An image file input in an imported app can now take a photo. The picture is taken by your camera app, so the app still declares no permissions, and live camera access stays denied.
+• Photos taken this way can be read for QR codes where the WebView supports it.
