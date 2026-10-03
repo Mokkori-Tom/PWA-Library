@@ -145,6 +145,100 @@ zip が本当にその名前のフォルダを含んでいる場合は、その�
   CSP が `fetch` を禁じていても読めるよう、`URL.createObjectURL` を包んで Blob を
   保持し FileReader で読む。ただし成否をページに返す方法はない
 
+## AI にアプリを作らせるときのプロンプト
+
+PWA Library の中は通常のブラウザと条件が違う（通信できない、カメラのライブ映像が
+使えない、など）。AI にミニアプリを作らせるときは、下の文面の【作りたいアプリ】を
+書き換えて渡すと、そのまま取り込める zip になりやすい。どの項目も、実機で実際に
+踏んだ失敗から来ている。
+
+```text
+Android の「PWA Library」というアプリで動かす Web アプリを作ってください。
+PWA Library は、zip にまとめた Web アプリを取り込み、端末内だけで動かすアプリです。
+通常のブラウザとは条件が違うので、下の制約を必ず守ってください。
+
+【作りたいアプリ】
+（ここに作りたいものを書く。例：買い物リスト。品目の追加・チェック・削除ができ、
+ 内容は次に開いたときも残っている。CSV で書き出せる。）
+
+【絶対に守る制約】
+1. インターネットに一切つながりません。CDN、Web フォント、外部 API、外部の画像や
+   スクリプトは使えません。必要なものはすべて zip の中に入れてください。
+   ライブラリを使う場合も、ファイルを同梱するか、使わずに素の HTML / CSS /
+   JavaScript で書いてください。
+2. zip の直下に index.html を置いてください。
+3. ファイルの参照はすべて相対パスにしてください（"./app.js" など）。
+   "/app.js" のような先頭スラッシュのパスは使わないでください。
+4. ビルド手順が不要な形にしてください。zip を展開したものがそのまま動くこと。
+   ファイル数は少ないほどよく、index.html 1 つに CSS と JavaScript を
+   まとめても構いません。
+5. Service Worker は入れないでください（すべて端末内にあるので不要です）。
+
+【index.html の head に入れるもの】
+- 先頭付近に <meta charset="utf-8">
+- <meta name="viewport" content="width=device-width, initial-scale=1">
+- <title> にアプリ名（"Document" などの既定値のままにしない）
+- <link rel="manifest" href="./manifest.json">
+
+【manifest.json】
+- name と short_name：アプリ名
+- id：このアプリ固有の文字列。バージョン番号や日付を入れず、今後も変えないこと
+  （例 "/kaimono-list"）。更新のとき、同じアプリかどうかの判定に使われます。
+- start_url："./index.html"、scope："./"、display："standalone"
+- icons：192x192 と 512x512 の PNG。PNG ファイルを作れない場合は、
+  base64 の PNG を data: URI として icons の src に入れてください。
+  SVG だけのアイコンは表示されません。
+
+【使える機能】
+- localStorage、IndexedDB（アプリを閉じても、更新しても残ります）
+- <input type="file"> によるファイルの読み込み
+- 写真の撮影：<input type="file" accept="image/*"> を押すと、利用者は
+  「写真を撮る」か「ファイルを選ぶ」を選べます。capture 属性を付けると
+  すぐカメラが開きます。
+- QR コード・バーコードの読み取り：撮った写真を BarcodeDetector に渡します。
+  使う前に 'BarcodeDetector' in window を確かめ、無ければその旨を画面に
+  表示してください。
+    const bitmap = await createImageBitmap(file);
+    const codes = await new BarcodeDetector({ formats: ['qr_code'] }).detect(bitmap);
+- ファイルの保存：Blob を URL.createObjectURL で URL にし、<a download="名前">
+  をクリックさせる方法。保存先を選ぶ画面が出ます。
+- Web Worker、WebAssembly、Canvas、WebGL、フルスクリーン
+
+【使えない機能】
+- fetch や XMLHttpRequest による外部への通信
+- カメラのライブ映像（getUserMedia）。映像を見ながらの連続読み取りはできません。
+  撮影は上の <input type="file"> を使ってください。
+- 通知（Notification）、マイク、位置情報
+- btoa() に日本語を直接渡すこと（例外になります。TextEncoder を使ってください）
+
+【QR コードの中身を使うとき】
+- 読み取った文字列をそのまま URL として開かないでください。
+  このアプリ用に決めた形式（例 "form:点検A"）に合うものだけを受け付け、
+  それ以外は「このアプリ用の QR コードではありません」と表示してください。
+
+【画面の作り方】
+- スマートフォンの縦画面（幅 360px 程度）で使いやすいこと。
+- ボタンなどの押す部分は 44px 以上の大きさにしてください。
+- 画面の上端約 40px はステータスバーと重なることがあるので、
+  そこに文字や操作部品を置かず、余白にしてください。
+- 画面のどこかに小さくバージョン（例 "v1"）を表示してください。
+  更新が反映されたかを確かめるために使います。
+- エラーが起きたら画面に表示してください。window.onerror で捕まえて、
+  メッセージを画面の下などに出すこと。
+
+【出力】
+- すべてのファイルを省略せずに出力してください。
+- zip ファイルを作れる場合は、zip にまとめて渡してください。作れない場合は、
+  ファイルごとに名前と中身を示してください。
+- 最後に、このアプリが保存するデータと、その保存場所（localStorage のキー名など）
+  を一覧にしてください。
+```
+
+フォルダへの読み書き（`showDirectoryPicker`）も使えるが、上の文面には入れていない。
+フォルダに書き出すアプリを作らせるときは、その旨を【作りたいアプリ】に書き足す。
+QR の読み取りは WebView の `BarcodeDetector` に頼っており、確認したのは
+Galaxy S24 のみ。
+
 ## ライセンス
 
 MIT License。全文は `LICENSE` を参照。
