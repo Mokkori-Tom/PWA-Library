@@ -23,3 +23,6 @@ app/release/
 
 # Goes to fdroiddata, not here
 fdroid-submission/
+
+# Local working notes. Not for the public repository.
+HANDOVER.md
