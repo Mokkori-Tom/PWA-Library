@@ -13,3 +13,13 @@ samples/dist/
 
 # Kotlin 2.x incremental compilation
 .kotlin/
+
+# Signing keys and signed outputs never belong in a public repository
+*.jks
+*.keystore
+*.p12
+keystore.properties
+app/release/
+
+# Goes to fdroiddata, not here
+fdroid-submission/
